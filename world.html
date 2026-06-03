@@ -115,6 +115,16 @@ const _ZC=[
   ['#c080ff','#06000f','rgba(30,0,60,0.16)'],   ['#b060ff','#050009','rgba(40,0,70,0.18)'],
   ['#a040ff','#040007','rgba(50,0,80,0.20)'],   ['#9020ff','#030005','rgba(60,0,90,0.22)'],
   ['#8000ff','#020003','rgba(70,0,100,0.24)'],  ['#6600ee','#010001','rgba(80,0,110,0.28)'],
+  // Act III zones 5–9 + boss (ice tundra deepens)
+  ['#0058a0','#000002','rgba(0,80,115,0.28)'],  ['#003e88','#000001','rgba(0,90,128,0.30)'],
+  ['#002870','#000001','rgba(0,100,140,0.32)'],  ['#001858','#000000','rgba(0,110,150,0.34)'],
+  ['#000c40','#000000','rgba(0,120,160,0.36)'],  ['#000430','#000000','rgba(0,130,170,0.38)'],
+  // Act IV zones 1–9 + boss (storm/electric darkens)
+  ['#5500dd','#000001','rgba(90,0,120,0.30)'],   ['#4400cc','#000001','rgba(100,0,130,0.32)'],
+  ['#3300bb','#000000','rgba(110,0,140,0.34)'],  ['#2200aa','#000000','rgba(120,0,150,0.36)'],
+  ['#110099','#000000','rgba(130,0,160,0.38)'],  ['#000088','#000000','rgba(140,0,170,0.40)'],
+  ['#000070','#000000','rgba(150,0,180,0.42)'],  ['#000058','#000000','rgba(155,0,190,0.44)'],
+  ['#000040','#000000','rgba(160,0,200,0.46)'],  ['#000030','#000000','rgba(165,0,210,0.48)'],
 ];
 const ZONE_CFG={
   town:{name:'Town',color:'#c8c8b0',bg:'#000000',atm:null},
@@ -2669,9 +2679,8 @@ player.wx=BEACH_SPAWN.wx;player.wy=BEACH_SPAWN.wy;
 updateCamera();
 
 // ── Main loop ──────────────────────────────────────────────────────────────
-let frame=0,_loopErr=null;
+let frame=0;
 function loop(){
-  try{
   frame++;
   const anyOpen=skillTreeOpen||inventoryOpen||shopOpen||questOpen||mapOpen;
   if(!anyOpen&&transition.phase==='none'){
@@ -2703,16 +2712,6 @@ function loop(){
   if(died)renderDied();
   renderWake();
   requestAnimationFrame(loop);
-  }catch(e){
-    _loopErr=_loopErr||e;
-    ctx.fillStyle='rgba(0,0,0,0.92)';ctx.fillRect(0,0,VW,VH);
-    ctx.fillStyle='#ff6060';ctx.font='bold 14px monospace';ctx.textAlign='center';
-    ctx.fillText('Error: '+e.message,VW/2,VH/2-10);
-    ctx.fillStyle='#aaa';ctx.font='11px monospace';
-    ctx.fillText((e.stack||'').split('\n')[1]||'',VW/2,VH/2+14);
-    ctx.textAlign='left';
-    requestAnimationFrame(loop);
-  }
 }
 loop();
 </script>
