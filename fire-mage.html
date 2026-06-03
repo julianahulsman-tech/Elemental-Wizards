@@ -1,0 +1,271 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fire Mage Demo</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: linear-gradient(180deg, #3d1100 0%, #1a0800 100%);
+      color: #ffe5cc;
+      font-family: Arial, sans-serif;
+    }
+    #gameCanvas {
+      border: 3px solid #f27240;
+      background: #1a0800;
+      box-shadow: 0 0 20px rgba(255, 80, 0, 0.4);
+    }
+    .help {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(242, 114, 64, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="help">
+    Press <strong>2</strong> or say <strong>"2"</strong> to fire a fireball as Player 2.
+  </div>
+  <div style="position:absolute; top:20px; right:20px; background:rgba(0,0,0,0.45); padding:10px 12px; border-radius:8px; border:1px solid rgba(242,114,64,0.5); text-align:right;">
+    <button type="button" onclick="handleAudioButton()" style="font-size:14px; padding:6px 12px;">Start Audio</button>
+    <div id="status" style="margin-top:8px; font-size:13px; color:#ffd2a8;">Audio model idle</div>
+  </div>
+  <canvas id="gameCanvas" width="640" height="480"></canvas>
+  <div id="label-container" style="position:absolute; bottom:20px; left:20px; background:rgba(0,0,0,0.45); padding:10px 12px; border-radius:8px; border:1px solid rgba(242,114,64,0.5); min-width:220px; font-size:13px;">
+    <div><strong>Audio labels</strong></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
+  <script>
+    // ── Game setup ──────────────────────────────────────────────────────────
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const mage = { x: canvas.width / 2 - 32, y: 80, width: 64, height: 96,
+                   color: '#c0392b', cloak: '#7b1a0a' };
+    const bullets = [];
+    let frameCount = 0;
+
+    window.addEventListener('keydown', e => { if (e.key === '2') fireBullet(); });
+
+    function fireBullet() {
+      bullets.push({
+        x: mage.x + mage.width / 2,
+        y: mage.y + mage.height - 16,
+        radius: 11,
+        speed: 5,
+        age: 0
+      });
+    }
+
+    function drawMage() {
+      // Cloak
+      ctx.fillStyle = mage.cloak;
+      ctx.fillRect(mage.x, mage.y + 24, mage.width, mage.height - 24);
+
+      // Head
+      ctx.fillStyle = mage.color;
+      ctx.fillRect(mage.x + 14, mage.y, 36, 36);
+
+      // Staff
+      ctx.fillStyle = '#c8a070';
+      ctx.fillRect(mage.x + mage.width + 6, mage.y + 14, 8, 80);
+
+      // Staff orb (glowing ember)
+      const orbGrad = ctx.createRadialGradient(
+        mage.x + mage.width + 10, mage.y + 14, 2,
+        mage.x + mage.width + 10, mage.y + 14, 12
+      );
+      orbGrad.addColorStop(0, '#fff0a0');
+      orbGrad.addColorStop(0.5, '#ff6600');
+      orbGrad.addColorStop(1, 'rgba(200,40,0,0)');
+      ctx.beginPath();
+      ctx.arc(mage.x + mage.width + 10, mage.y + 14, 12, 0, Math.PI * 2);
+      ctx.fillStyle = orbGrad;
+      ctx.fill();
+
+      // Flame symbol on cloak
+      ctx.fillStyle = '#ff9944';
+      ctx.font = '24px sans-serif';
+      ctx.fillText('🔥', mage.x + mage.width / 2 - 12, mage.y + 60);
+
+      // Hat
+      ctx.fillStyle = '#5a0e0e';
+      ctx.beginPath();
+      ctx.moveTo(mage.x + 10, mage.y + 8);
+      ctx.lineTo(mage.x + mage.width - 10, mage.y + 8);
+      ctx.lineTo(mage.x + mage.width / 2, mage.y - 18);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawBullets() {
+      bullets.forEach(b => {
+        // Outer glow
+        const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.radius * 2.5);
+        glow.addColorStop(0, 'rgba(255,200,50,0.6)');
+        glow.addColorStop(0.5, 'rgba(255,80,0,0.3)');
+        glow.addColorStop(1, 'rgba(200,0,0,0)');
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
+
+        // Core fireball
+        const core = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.radius);
+        core.addColorStop(0, '#fff9c4');
+        core.addColorStop(0.4, '#ff8c00');
+        core.addColorStop(1, '#cc2200');
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.fillStyle = core;
+        ctx.fill();
+      });
+    }
+
+    function updateBullets() {
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        bullets[i].y -= bullets[i].speed;
+        bullets[i].age++;
+        if (bullets[i].y + bullets[i].radius < 0) bullets.splice(i, 1);
+      }
+    }
+
+    function drawBackground() {
+      const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      g.addColorStop(0, '#2a0a00');
+      g.addColorStop(1, '#0f0400');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Ember particles floating up
+      ctx.save();
+      for (let i = 0; i < 12; i++) {
+        const t = (frameCount * 0.4 + i * 37) % canvas.height;
+        const x = (Math.sin(i * 1.7 + frameCount * 0.02) * 80 + canvas.width / 2 + (i - 6) * 40) % canvas.width;
+        const alpha = 0.15 + 0.1 * Math.sin(frameCount * 0.05 + i);
+        const r = 2 + Math.sin(i * 0.8) * 1.5;
+        ctx.beginPath();
+        ctx.arc(x, canvas.height - t, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,${100 + i * 10},0,${alpha})`;
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // Ground lava glow
+      const lavaGrad = ctx.createLinearGradient(0, canvas.height - 40, 0, canvas.height);
+      lavaGrad.addColorStop(0, 'rgba(200,50,0,0.08)');
+      lavaGrad.addColorStop(1, 'rgba(255,120,0,0.18)');
+      ctx.fillStyle = lavaGrad;
+      ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+    }
+
+    function loop() {
+      frameCount++;
+      updateBullets();
+      drawBackground();
+      drawMage();
+      drawBullets();
+      requestAnimationFrame(loop);
+    }
+    loop();
+
+    // ── Audio / Teachable Machine ────────────────────────────────────────────
+    // Replace MODEL_URL with your own Teachable Machine audio model for "2"
+    const MODEL_URL = 'https://teachablemachine.withgoogle.com/models/dQJy5AP3m/';
+    let recognizer = null;
+    let classLabels = [];
+    let audioPaused = false;
+    let browserSpeech = null;
+    const status = document.getElementById('status');
+    const labelContainer = document.getElementById('label-container');
+
+    async function createModel() {
+      const r = speechCommands.create(
+        'BROWSER_FFT', undefined,
+        MODEL_URL + 'model.json',
+        MODEL_URL + 'metadata.json'
+      );
+      await r.ensureModelLoaded();
+      return r;
+    }
+
+    function startListeningTF() {
+      recognizer.listen(result => {
+        const scores = result.scores;
+        for (let i = 0; i < classLabels.length; i++) {
+          labelContainer.childNodes[i + 1].innerHTML = classLabels[i] + ': ' + scores[i].toFixed(2);
+        }
+        const best = scores.indexOf(Math.max(...scores));
+        const label = classLabels[best];
+        status.textContent = label + ': ' + scores[best].toFixed(2);
+        const isNoise = /background|noise|unknown/i.test(label);
+        if (scores[best] >= 0.75 && !isNoise) {
+          fireBullet();
+        }
+      }, {
+        includeSpectrogram: true,
+        probabilityThreshold: 0.75,
+        invokeCallbackOnNoiseAndUnknown: true,
+        overlapFactor: 0.50
+      });
+    }
+
+    function startBrowserSpeech() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return false;
+      browserSpeech = new SR();
+      browserSpeech.lang = 'en-US';
+      browserSpeech.continuous = true;
+      browserSpeech.interimResults = false;
+
+      browserSpeech.onresult = e => {
+        const t = e.results[e.results.length - 1][0].transcript.trim().toLowerCase().replace(/(\d)/g," $1 ").replace(/\s+/g," ").trim();
+        if (/\bpause\b/.test(t)) { pauseAudio(); return; }
+        status.textContent = 'Heard: "' + t + '"';
+        const shots=(t.match(/\b(2|two|to|too|fire|burn)\b/g)||[]).length;
+        for(let i=0;i<shots;i++) fireBullet();
+        if(shots>0) status.textContent='Fired '+shots+'x! (heard: "'+t+'")';
+      };
+      browserSpeech.onerror = e => { if (e.error !== 'no-speech') status.textContent = 'Error: ' + e.error; };
+      browserSpeech.onend = () => { if (!audioPaused) try { browserSpeech.start(); } catch(e) {} };
+      browserSpeech.start();
+      return true;
+    }
+
+    function pauseAudio() {
+      audioPaused = true;
+      if (recognizer) recognizer.stopListening();
+      if (browserSpeech) browserSpeech.stop();
+      status.textContent = 'Audio paused — click Start Audio to resume';
+    }
+
+    function init() {
+      audioPaused = false;
+      if (startBrowserSpeech()) {
+        status.textContent = 'Voice recognition active — say "two" to fire';
+      } else {
+        status.textContent = 'Audio unavailable — use keyboard (press 2)';
+      }
+    }
+
+    function handleAudioButton() {
+      if (audioPaused) {
+        audioPaused = false;
+        if (browserSpeech) { try { browserSpeech.start(); } catch(ex) {} status.textContent = 'Listening...'; }
+        else { init(); }
+      } else {
+        init();
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Elemental Wizards</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:#0a0a0a;color:#eee;font-family:Arial,sans-serif;
+         min-height:100vh;display:flex;flex-direction:column;
+         align-items:center;justify-content:center;gap:20px;}
+
+    h1.title{font-size:20px;letter-spacing:6px;color:#bbb;}
+
+    /* ── Shared panel ─────────────────────────────────────────────────────── */
+    .panel{display:none;flex-direction:column;align-items:center;gap:20px;}
+    .panel.active{display:flex;}
+
+    /* ── Login box ────────────────────────────────────────────────────────── */
+    #loginBox{
+      background:#111;border:1px solid #222;border-radius:12px;
+      padding:28px 32px;display:flex;flex-direction:column;gap:14px;width:320px;
+    }
+    .tabBar{display:flex;border-radius:6px;overflow:hidden;border:1px solid #222;}
+    .tabBar button{
+      flex:1;padding:8px 0;font-size:12px;font-weight:bold;letter-spacing:2px;
+      border:none;background:#1a1a1a;color:#555;cursor:pointer;transition:all .2s;
+    }
+    .tabBar button.active{background:#222;color:#ddd;}
+    .loginInput{
+      background:#0d0d0d;border:1px solid #2a2a2a;border-radius:6px;
+      color:#eee;padding:10px 12px;font-size:14px;outline:none;transition:border-color .2s;
+    }
+    .loginInput:focus{border-color:#555;}
+    .loginInput::placeholder{color:#333;}
+    #loginError{font-size:12px;color:#e05050;min-height:16px;text-align:center;}
+    #submitBtn{
+      padding:11px;font-size:13px;font-weight:bold;letter-spacing:3px;
+      border:none;border-radius:6px;
+      background:linear-gradient(135deg,#1a3a6a,#2255aa);
+      color:#aacfff;cursor:pointer;transition:all .2s;
+    }
+    #submitBtn:hover{filter:brightness(1.2);}
+    .loginNote{font-size:11px;color:#333;text-align:center;}
+
+    /* ── Element picker ───────────────────────────────────────────────────── */
+    #pickScreen .subtitle{font-size:12px;letter-spacing:3px;color:#444;}
+
+    .bigCards{display:flex;gap:14px;}
+    .bcard{
+      width:140px;height:160px;border-radius:10px;border:2px solid #1e1e1e;
+      cursor:pointer;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:8px;
+      transition:all .18s;user-select:none;
+    }
+    .bcard:hover{transform:translateY(-4px);filter:brightness(1.25);}
+    .bcard.sel{transform:translateY(-4px);}
+    .bcard .ci{font-size:38px;line-height:1;}
+    .bcard .cn{font-size:12px;font-weight:bold;letter-spacing:2px;}
+
+    .e1{background:linear-gradient(150deg,#091f47,#163678);}
+    .e1.sel{border-color:#70c1f2;box-shadow:0 0 16px rgba(112,193,242,.6);}
+    .e2{background:linear-gradient(150deg,#2e0800,#6a1508);}
+    .e2.sel{border-color:#f27240;box-shadow:0 0 16px rgba(242,114,64,.6);}
+    .e3{background:linear-gradient(150deg,#15034a,#280960);}
+    .e3.sel{border-color:#b06aff;box-shadow:0 0 16px rgba(176,106,255,.6);}
+    .e4{background:linear-gradient(150deg,#04131e,#0b3048);}
+    .e4.sel{border-color:#7adcf5;box-shadow:0 0 16px rgba(122,220,245,.6);}
+
+    .nameRow{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;}
+    .nameRow label{font-size:11px;letter-spacing:2px;color:#555;}
+    #nameInput{
+      background:#0d0d0d;border:1px solid #2a2a2a;border-radius:6px;
+      color:#eee;padding:9px 14px;font-size:14px;outline:none;
+      transition:border-color .2s;width:240px;text-align:center;letter-spacing:1px;
+    }
+    #nameInput:focus{border-color:#555;}
+    #nameInput::placeholder{color:#2a2a2a;}
+    #enterWorldBtn{
+      padding:13px 40px;font-size:15px;font-weight:bold;letter-spacing:4px;
+      border:none;border-radius:8px;background:#111;color:#282828;
+      cursor:not-allowed;transition:all .25s;
+    }
+    #enterWorldBtn.ready{
+      background:linear-gradient(135deg,#005580,#0099cc);color:#fff;
+      cursor:pointer;animation:pulse-w 1.5s infinite alternate;
+    }
+    @keyframes pulse-w{
+      from{box-shadow:0 0 8px rgba(0,153,204,.3);}
+      to{box-shadow:0 0 22px rgba(0,153,204,.75);}
+    }
+    #enterWorldBtn.ready:hover{transform:scale(1.05);}
+
+    /* Arena toggle */
+    #arenaToggle{
+      font-size:11px;color:#333;background:none;border:none;
+      cursor:pointer;letter-spacing:2px;padding:4px;transition:color .2s;
+    }
+    #arenaToggle:hover{color:#888;}
+
+    /* Arena section */
+    #arenaSection{
+      display:none;flex-direction:column;align-items:center;gap:14px;
+      border-top:1px solid #1a1a1a;padding-top:18px;width:600px;
+    }
+    #arenaSection.open{display:flex;}
+    #arenaSection .alabel{font-size:11px;letter-spacing:3px;color:#444;}
+    .arow{display:flex;gap:40px;align-items:flex-start;}
+    .acol{display:flex;flex-direction:column;align-items:center;gap:10px;}
+    .acol .plabel{font-size:11px;font-weight:bold;letter-spacing:3px;}
+    .smCards{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+    .scard{
+      width:100px;height:88px;border-radius:8px;border:2px solid #1e1e1e;
+      cursor:pointer;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:4px;
+      transition:all .15s;user-select:none;
+    }
+    .scard:hover:not(.locked){transform:translateY(-2px);filter:brightness(1.2);}
+    .scard.sel{transform:translateY(-2px);}
+    .scard.locked{opacity:.2;cursor:not-allowed;filter:grayscale(.8);}
+    .scard .ci{font-size:24px;line-height:1;}
+    .scard .cn{font-size:10px;font-weight:bold;}
+    .vs{font-size:18px;font-weight:bold;color:#333;letter-spacing:4px;padding-top:40px;}
+    #fightBtn{
+      padding:10px 20px;font-size:13px;font-weight:bold;letter-spacing:3px;
+      border:none;border-radius:6px;background:#111;color:#282828;
+      cursor:not-allowed;transition:all .25s;
+    }
+    #fightBtn.ready{
+      background:linear-gradient(135deg,#a01000,#ff4400);color:#fff;
+      cursor:pointer;animation:pulse 1.5s infinite alternate;
+    }
+    @keyframes pulse{
+      from{box-shadow:0 0 8px rgba(255,70,0,.3);}
+      to{box-shadow:0 0 22px rgba(255,70,0,.75);}
+    }
+    #fightBtn.ready:hover{transform:scale(1.08);}
+
+    /* User bar */
+    #userBar{
+      position:fixed;top:14px;right:18px;
+      display:none;align-items:center;gap:10px;font-size:12px;color:#555;
+    }
+    #userBar.show{display:flex;}
+    #userBar strong{color:#777;}
+    #logoutBtn{
+      padding:4px 10px;font-size:11px;font-weight:bold;letter-spacing:1px;
+      border:1px solid #2a2a2a;border-radius:4px;background:#111;color:#555;
+      cursor:pointer;transition:all .15s;
+    }
+    #logoutBtn:hover{border-color:#555;color:#aaa;}
+  </style>
+</head>
+<body>
+
+<!-- User bar (always visible when logged in) -->
+<div id="userBar">
+  <strong id="userDisplay"></strong>
+  <button id="logoutBtn" onclick="logout()">Logout</button>
+</div>
+
+<!-- ── Login panel ────────────────────────────────────────────────────────── -->
+<div id="loginPanel" class="panel active">
+  <h1 class="title">⚔ ELEMENTAL WIZARDS ⚔</h1>
+  <div id="loginBox">
+    <div class="tabBar">
+      <button id="tabLogin" class="active" onclick="setTab('login')">LOGIN</button>
+      <button id="tabReg" onclick="setTab('register')">REGISTER</button>
+    </div>
+    <input class="loginInput" type="text" id="unInput" placeholder="Username"
+           autocomplete="username" maxlength="24" spellcheck="false"/>
+    <input class="loginInput" type="password" id="pwInput" placeholder="Password"
+           autocomplete="current-password" maxlength="64"/>
+    <div id="loginError"></div>
+    <button id="submitBtn" onclick="submitAuth()">LOGIN</button>
+    <div class="loginNote">Passwords are stored as a secure hash — never plain text.</div>
+  </div>
+</div>
+
+<!-- ── Element pick panel ─────────────────────────────────────────────────── -->
+<div id="pickScreen" class="panel">
+  <h1 class="title">⚔ ELEMENTAL WIZARDS ⚔</h1>
+  <div class="subtitle">CHOOSE YOUR ELEMENT</div>
+
+  <div class="bigCards" id="bigCardGrid"></div>
+
+  <div class="nameRow">
+    <label>NAME YOUR WIZARD</label>
+    <input id="nameInput" type="text" maxlength="18" placeholder="Enter name..." autocomplete="off" spellcheck="false"
+           oninput="updateWorldBtn()" onkeydown="if(event.key==='Enter')goWorld()"/>
+  </div>
+
+  <button id="enterWorldBtn" onclick="goWorld()">ENTER WORLD</button>
+
+  <button id="arenaToggle" onclick="toggleArena()">⚔ ARENA MODE (optional)</button>
+
+  <div id="arenaSection">
+    <div class="alabel">2-PLAYER ARENA</div>
+    <div class="arow">
+      <div class="acol">
+        <div class="plabel" style="color:#9cf">PLAYER 1</div>
+        <div class="smCards" id="aG1"></div>
+      </div>
+      <div class="vs">VS</div>
+      <div class="acol">
+        <div class="plabel" style="color:#fca">PLAYER 2</div>
+        <div class="smCards" id="aG2"></div>
+      </div>
+    </div>
+    <button id="fightBtn" onclick="fight()">FIGHT!</button>
+  </div>
+</div>
+
+<script>
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function pbkdf2Hash(password, saltHex) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name:'PBKDF2', salt:hexToBytes(saltHex), iterations:200000, hash:'SHA-256' }, key, 256
+  );
+  return bytesToHex(new Uint8Array(bits));
+}
+function randomSaltHex(){ return bytesToHex(crypto.getRandomValues(new Uint8Array(16))); }
+function bytesToHex(b){ return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join(''); }
+function hexToBytes(h){ const a=new Uint8Array(h.length/2); for(let i=0;i<a.length;i++) a[i]=parseInt(h.slice(i*2,i*2+2),16); return a; }
+function getUsers(){ try{return JSON.parse(localStorage.getItem('ew_users')||'{}');}catch{return{};} }
+function saveUsers(u){ localStorage.setItem('ew_users',JSON.stringify(u)); }
+
+let authMode='login', currentUser=null;
+
+function setTab(m){
+  authMode=m;
+  document.getElementById('tabLogin').classList.toggle('active',m==='login');
+  document.getElementById('tabReg').classList.toggle('active',m==='register');
+  document.getElementById('submitBtn').textContent=m==='login'?'LOGIN':'REGISTER';
+  document.getElementById('loginError').textContent='';
+  document.getElementById('pwInput').autocomplete=m==='login'?'current-password':'new-password';
+}
+function setError(msg){ document.getElementById('loginError').textContent=msg; }
+
+async function submitAuth(){
+  const un=document.getElementById('unInput').value.trim();
+  const pw=document.getElementById('pwInput').value;
+  setError('');
+  if(!un){ setError('Enter a username.'); return; }
+  if(un.length<2){ setError('Username must be at least 2 characters.'); return; }
+  if(!pw){ setError('Enter a password.'); return; }
+  if(authMode==='register'&&pw.length<4){ setError('Password must be at least 4 characters.'); return; }
+
+  const btn=document.getElementById('submitBtn');
+  btn.disabled=true; btn.textContent='...';
+  const users=getUsers();
+
+  if(authMode==='register'){
+    if(users[un.toLowerCase()]){ setError('Username already taken.'); btn.disabled=false; setTab('register'); return; }
+    const salt=randomSaltHex(), hash=await pbkdf2Hash(pw,salt);
+    users[un.toLowerCase()]={ display:un, salt, hash, element:null };
+    saveUsers(users);
+    afterLogin(un);
+  } else {
+    const rec=users[un.toLowerCase()];
+    if(!rec){ setError('No account found. Register first.'); btn.disabled=false; btn.textContent='LOGIN'; return; }
+    const hash=await pbkdf2Hash(pw,rec.salt);
+    if(hash!==rec.hash){ setError('Wrong password.'); btn.disabled=false; btn.textContent='LOGIN'; return; }
+    afterLogin(rec.display||un);
+  }
+}
+
+document.getElementById('pwInput').addEventListener('keydown',e=>{ if(e.key==='Enter') submitAuth(); });
+document.getElementById('unInput').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('pwInput').focus(); });
+
+function afterLogin(username){
+  currentUser=username;
+  sessionStorage.setItem('ew_user', username);
+  document.getElementById('userDisplay').textContent=username;
+  document.getElementById('userBar').classList.add('show');
+
+  // If they already have a saved element + name, go straight to the world
+  const users=getUsers();
+  const rec=users[username.toLowerCase()];
+  if(rec && rec.element && rec.wizardName){
+    window.location.href='world.html?p='+rec.element+'&name='+encodeURIComponent(rec.wizardName);
+    return;
+  }
+  showPanel('pickScreen');
+  if(rec && rec.element){ chosenEl=rec.element; }
+  if(rec && rec.wizardName){ document.getElementById('nameInput').value=rec.wizardName; }
+  buildBigCards();
+  buildArenaCards();
+  updateWorldBtn();
+}
+
+function logout(){
+  sessionStorage.removeItem('ew_user');
+  currentUser=null;
+  document.getElementById('userBar').classList.remove('show');
+  document.getElementById('submitBtn').disabled=false;
+  document.getElementById('submitBtn').textContent='LOGIN';
+  document.getElementById('unInput').value='';
+  document.getElementById('pwInput').value='';
+  setTab('login');
+  showPanel('loginPanel');
+}
+
+function showPanel(id){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// Resume session
+(function(){
+  const u=sessionStorage.getItem('ew_user');
+  if(u){ afterLogin(u); }
+})();
+
+// ── Element picker ────────────────────────────────────────────────────────────
+
+const EL=[
+  {id:1,name:'Water',   icon:'💧'},
+  {id:2,name:'Fire',    icon:'🔥'},
+  {id:3,name:'Electric',icon:'⚡'},
+  {id:4,name:'Ice',     icon:'❄'},
+];
+let chosenEl=null, arenaS1=null, arenaS2=null;
+
+function buildBigCards(){
+  const g=document.getElementById('bigCardGrid');
+  g.innerHTML='';
+  EL.forEach(e=>{
+    const d=document.createElement('div');
+    d.className=`bcard e${e.id}${chosenEl===e.id?' sel':''}`;
+    d.innerHTML=`<div class="ci">${e.icon}</div><div class="cn">${e.name.toUpperCase()}</div>`;
+    d.onclick=()=>{ chosenEl=e.id; buildBigCards(); syncArenaP1(e.id); updateWorldBtn(); document.getElementById('nameInput').focus(); };
+    g.appendChild(d);
+  });
+}
+
+function updateWorldBtn(){
+  const name=document.getElementById('nameInput').value.trim();
+  document.getElementById('enterWorldBtn').classList.toggle('ready',!!(chosenEl&&name.length>=2));
+}
+
+function goWorld(){
+  const name=document.getElementById('nameInput').value.trim();
+  if(!chosenEl||name.length<2) return;
+  const users=getUsers();
+  const key=currentUser?currentUser.toLowerCase():null;
+  if(key && users[key]){ users[key].element=chosenEl; users[key].wizardName=name; saveUsers(users); }
+  window.location.href='world.html?p='+chosenEl+'&name='+encodeURIComponent(name);
+}
+
+// ── Arena (optional) ──────────────────────────────────────────────────────────
+
+function toggleArena(){
+  const s=document.getElementById('arenaSection');
+  s.classList.toggle('open');
+  document.getElementById('arenaToggle').textContent=
+    s.classList.contains('open') ? '▲ hide arena' : '⚔ ARENA MODE (optional)';
+}
+
+function syncArenaP1(id){ arenaS1=id; buildArenaCards(); updateFightBtn(); }
+
+function buildArenaCards(){
+  buildACol('aG1', 1);
+  buildACol('aG2', 2);
+}
+
+function buildACol(gid, pl){
+  const g=document.getElementById(gid);
+  g.innerHTML='';
+  const me=pl===1?arenaS1:arenaS2, other=pl===1?arenaS2:arenaS1;
+  EL.forEach(e=>{
+    const d=document.createElement('div');
+    d.className=`scard e${e.id}`;
+    if(me===e.id) d.classList.add('sel');
+    if(other===e.id) d.classList.add('locked');
+    d.innerHTML=`<div class="ci">${e.icon}</div><div class="cn">${e.name}</div>`;
+    if(other!==e.id) d.onclick=()=>{
+      if(pl===1){ arenaS1=e.id; chosenEl=e.id; buildBigCards(); updateWorldBtn(); }
+      else arenaS2=e.id;
+      buildArenaCards(); updateFightBtn();
+    };
+    g.appendChild(d);
+  });
+}
+
+function updateFightBtn(){
+  document.getElementById('fightBtn').classList.toggle('ready',!!(arenaS1&&arenaS2));
+}
+
+function fight(){ if(arenaS1&&arenaS2) window.location.href='arena.html?p1='+arenaS1+'&p2='+arenaS2; }
+</script>
+</body>
+</html>

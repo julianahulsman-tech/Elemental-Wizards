@@ -1,0 +1,2565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Elemental World</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;transition:background .8s;}
+    canvas{display:block;}
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const params = new URLSearchParams(location.search);
+const playerElement = parseInt(params.get('p')) || 2;
+const playerName = decodeURIComponent(params.get('name') || 'Mage');
+if (![1,2,3,4].includes(playerElement)) location.href = 'index.html';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const VW = 800, VH = 600;
+canvas.width = VW; canvas.height = VH;
+
+const TS = 32, MW = 64, MH = 64, WORLD_W = MW*TS, WORLD_H = MH*TS;
+const T = {
+  GRASS:0,DIRT:1,WATER:2,DEEP_WATER:3,TREE:4,ROCK:5,
+  SAND:6,SNOW:7,FLOWER_R:8,FLOWER_Y:9,FLOWER_P:10,
+  LAVA_ROCK:11,ICE_ROCK:12,SPARK_GROUND:13,COBBLE:14
+};
+const TILE_DEF = [
+  {w:true, b:'#3a7d44'},{w:true, b:'#7a5c3a'},{w:false,b:'#1a4a8a'},
+  {w:false,b:'#0e2e60'},{w:false,b:'#1a4a1a'},{w:false,b:'#5a5a5a'},
+  {w:true, b:'#c8b060'},{w:true, b:'#d8eeff'},{w:true, b:'#3a7d44'},
+  {w:true, b:'#3a7d44'},{w:true, b:'#3a7d44'},{w:true, b:'#4a2818'},
+  {w:false,b:'#2a4a5a'},{w:true, b:'#3a7d44'},{w:true, b:'#8a8070'},
+];
+const ELEMENTS = {
+  1:{name:'Water',   icon:'💧',cloak:'#113f85',head:'#5db8ff',hat:'#0f6086',glow:'rgba(93,184,255,0.35)',orb:'#5db8ff',label:'#70c1f2'},
+  2:{name:'Fire',    icon:'🔥',cloak:'#7b1a0a',head:'#c0392b',hat:'#5a0e0e',glow:'rgba(255,80,0,0.35)',  orb:'#e05030',label:'#f27240'},
+  3:{name:'Electric',icon:'⚡',cloak:'#2d0a6b',head:'#7b2fff',hat:'#1a0540',glow:'rgba(136,51,255,0.35)',orb:'#8833ff',label:'#b06aff'},
+  4:{name:'Ice',     icon:'❄', cloak:'#0d3a52',head:'#4db8d8',hat:'#062840',glow:'rgba(32,144,184,0.35)',orb:'#2090b8',label:'#7adcf5'},
+};
+const PEL = ELEMENTS[playerElement];
+
+// ── Campaign zone chain ────────────────────────────────────────────────────
+// 10 zones per act (9 normal + 1 boss arena). Each: id,name,act,seq,scale,biome,mc,dt,boss?
+const CAMPAIGN=[
+  // Act I — The Water (beach/forest biome)
+  {id:'a1_1',name:'Coastal Strand',      act:1,seq:1, scale:1.0, biome:'beach', mc:[{t:4,n:5},{t:0,n:4}],             dt:1},
+  {id:'a1_2',name:'Sandy Coves',         act:1,seq:2, scale:1.4, biome:'beach', mc:[{t:4,n:6},{t:0,n:4}],             dt:1},
+  {id:'a1_3',name:'Drowned Crossing',    act:1,seq:3, scale:1.8, biome:'beach', mc:[{t:4,n:7},{t:0,n:5}],             dt:1},
+  {id:'a1_4',name:'Tidal Marshes',       act:1,seq:4, scale:2.2, biome:'forest',mc:[{t:4,n:7},{t:0,n:5},{t:1,n:2}],  dt:1},
+  {id:'a1_5',name:'The Kelp Grotto',     act:1,seq:5, scale:2.7, biome:'forest',mc:[{t:4,n:8},{t:0,n:5},{t:1,n:3}],  dt:2},
+  {id:'a1_6',name:'Sunken Ruins',        act:1,seq:6, scale:3.2, biome:'forest',mc:[{t:4,n:9},{t:0,n:5},{t:1,n:3}],  dt:2},
+  {id:'a1_7',name:'Murky Shallows',      act:1,seq:7, scale:3.7, biome:'beach', mc:[{t:4,n:9},{t:0,n:5},{t:2,n:2}],  dt:2},
+  {id:'a1_8',name:'Tide Gate',           act:1,seq:8, scale:4.2, biome:'beach', mc:[{t:4,n:10},{t:0,n:5},{t:2,n:3}], dt:2},
+  {id:'a1_9',name:'Abyssal Shore',       act:1,seq:9, scale:4.8, biome:'beach', mc:[{t:4,n:11},{t:0,n:6},{t:2,n:3}], dt:2},
+  {id:'a1_b',name:'The Formless Depths', act:1,seq:10,scale:5.5, biome:'beach', mc:[{t:4,n:8},{t:0,n:4}],             dt:2,boss:6},
+  // Act II — Uncontrolled Fire (ember biome)
+  {id:'a2_1',name:'Scorched Outskirts',  act:2,seq:1, scale:6.0, biome:'ember', mc:[{t:1,n:8},{t:0,n:4}],             dt:2},
+  {id:'a2_2',name:'Ash Flats',           act:2,seq:2, scale:6.8, biome:'ember', mc:[{t:1,n:9},{t:0,n:4}],             dt:2},
+  {id:'a2_3',name:'Cinder Fields',       act:2,seq:3, scale:7.6, biome:'ember', mc:[{t:1,n:10},{t:0,n:4}],            dt:2},
+  {id:'a2_4',name:'Ember Plains',        act:2,seq:4, scale:8.4, biome:'ember', mc:[{t:1,n:10},{t:3,n:3},{t:0,n:3}],  dt:3},
+  {id:'a2_5',name:'Smoldering Pass',     act:2,seq:5, scale:9.2, biome:'ember', mc:[{t:1,n:11},{t:3,n:4},{t:0,n:3}],  dt:3},
+  {id:'a2_6',name:'Lava Channels',       act:2,seq:6, scale:10.0,biome:'ember', mc:[{t:1,n:12},{t:3,n:5}],             dt:3},
+  {id:'a2_7',name:'The Slag Pits',       act:2,seq:7, scale:10.8,biome:'ember', mc:[{t:1,n:12},{t:3,n:5},{t:2,n:2}],  dt:3},
+  {id:'a2_8',name:'Magma Heart',         act:2,seq:8, scale:11.6,biome:'ember', mc:[{t:1,n:13},{t:3,n:6},{t:2,n:3}],  dt:3},
+  {id:'a2_9',name:'Crown of Cinders',    act:2,seq:9, scale:12.5,biome:'ember', mc:[{t:1,n:13},{t:3,n:6},{t:2,n:3}],  dt:3},
+  {id:'a2_b',name:'The Burning Throne',  act:2,seq:10,scale:13.5,biome:'ember', mc:[{t:1,n:10},{t:3,n:5}],             dt:3,boss:7},
+  // Act III — The Iced Automaton (tundra biome)
+  {id:'a3_1',name:'Frost Border',        act:3,seq:1, scale:14.5,biome:'tundra',mc:[{t:2,n:8},{t:0,n:4}],             dt:3},
+  {id:'a3_2',name:"Winter's Edge",       act:3,seq:2, scale:16.0,biome:'tundra',mc:[{t:2,n:9},{t:0,n:4}],             dt:3},
+  {id:'a3_3',name:'Glacial Plains',      act:3,seq:3, scale:17.5,biome:'tundra',mc:[{t:2,n:10},{t:0,n:4}],            dt:3},
+  {id:'a3_4',name:'Crystal Tundra',      act:3,seq:4, scale:19.0,biome:'tundra',mc:[{t:2,n:10},{t:4,n:4},{t:0,n:3}],  dt:4},
+  {id:'a3_5',name:'Ice Bluffs',          act:3,seq:5, scale:20.5,biome:'tundra',mc:[{t:2,n:11},{t:4,n:4},{t:0,n:3}],  dt:4},
+  {id:'a3_6',name:'The Frozen Wastes',   act:3,seq:6, scale:22.0,biome:'tundra',mc:[{t:2,n:12},{t:4,n:5}],             dt:4},
+  {id:'a3_7',name:'Ice Caverns',         act:3,seq:7, scale:23.5,biome:'tundra',mc:[{t:2,n:12},{t:4,n:5},{t:3,n:3}],  dt:4},
+  {id:'a3_8',name:'Glacial Core',        act:3,seq:8, scale:25.0,biome:'tundra',mc:[{t:2,n:13},{t:4,n:6},{t:3,n:3}],  dt:4},
+  {id:'a3_9',name:'The Permafrost',      act:3,seq:9, scale:26.5,biome:'tundra',mc:[{t:2,n:13},{t:4,n:6},{t:3,n:4}],  dt:4},
+  {id:'a3_b',name:"Automaton's Forge",   act:3,seq:10,scale:28.0,biome:'tundra',mc:[{t:2,n:10},{t:4,n:5}],             dt:4,boss:8},
+  // Act IV — Thunder Manifestation (storm biome)
+  {id:'a4_1',name:'Storm Foothills',     act:4,seq:1, scale:30.0,biome:'storm', mc:[{t:3,n:10},{t:2,n:4}],             dt:4},
+  {id:'a4_2',name:'Thunder Ridge',       act:4,seq:2, scale:33.0,biome:'storm', mc:[{t:3,n:11},{t:2,n:4}],             dt:4},
+  {id:'a4_3',name:'Stormwall Crossing',  act:4,seq:3, scale:36.0,biome:'storm', mc:[{t:3,n:12},{t:2,n:5}],             dt:5},
+  {id:'a4_4',name:'Tempest Valley',      act:4,seq:4, scale:39.0,biome:'storm', mc:[{t:3,n:12},{t:2,n:5},{t:1,n:3}],  dt:5},
+  {id:'a4_5',name:'Gale Flats',          act:4,seq:5, scale:42.0,biome:'storm', mc:[{t:3,n:13},{t:2,n:5},{t:1,n:3}],  dt:5},
+  {id:'a4_6',name:'Lightning Spire',     act:4,seq:6, scale:45.0,biome:'storm', mc:[{t:3,n:14},{t:2,n:6}],             dt:5},
+  {id:'a4_7',name:'The Vortex Gate',     act:4,seq:7, scale:48.0,biome:'storm', mc:[{t:3,n:14},{t:2,n:6},{t:1,n:4}],  dt:5},
+  {id:'a4_8',name:'Eye of the Storm',    act:4,seq:8, scale:51.0,biome:'storm', mc:[{t:3,n:15},{t:2,n:6},{t:1,n:4}],  dt:5},
+  {id:'a4_9',name:'Thunder Summit',      act:4,seq:9, scale:55.0,biome:'storm', mc:[{t:3,n:15},{t:2,n:7},{t:1,n:5}],  dt:5},
+  {id:'a4_b',name:'Manifestation Chamber',act:4,seq:10,scale:60.0,biome:'storm',mc:[{t:3,n:12},{t:2,n:5}],            dt:5,boss:9},
+];
+const CAMPAIGN_BY_ID=Object.fromEntries(CAMPAIGN.map(z=>[z.id,z]));
+function campaignNext(id){const z=CAMPAIGN_BY_ID[id];if(!z)return null;if(z.boss)return'town';const i=CAMPAIGN.indexOf(z);return CAMPAIGN[i+1]?.id||null;}
+function campaignPrev(id){const z=CAMPAIGN_BY_ID[id];if(!z)return null;if(z.seq===1)return'town';const i=CAMPAIGN.indexOf(z);return CAMPAIGN[i-1]?.id||null;}
+function getZoneAct(id){return CAMPAIGN_BY_ID[id]?.act||0;}
+function getZoneBiome(id){return CAMPAIGN_BY_ID[id]?.biome||null;}
+
+// ── Zone config (auto-generated from CAMPAIGN + town/map) ──────────────────
+// Colors per zone: [color, bg, atm] — each act darkens progressively
+const _ZC=[
+  ['#a0d0f0','#0a1828','rgba(0,60,120,0.06)'],  ['#80c0e8','#081420','rgba(0,50,110,0.08)'],
+  ['#60b0e0','#060e18','rgba(0,40,100,0.10)'],  ['#40a0d8','#040c16','rgba(0,35,90,0.12)'],
+  ['#2090d0','#030a14','rgba(0,30,80,0.14)'],   ['#1070a8','#020810','rgba(0,20,60,0.18)'],
+  ['#f08040','#110200','rgba(70,12,0,0.16)'],   ['#e06030','#0e0100','rgba(80,10,0,0.18)'],
+  ['#d04820','#0b0000','rgba(90,8,0,0.20)'],    ['#c03010','#090000','rgba(100,6,0,0.22)'],
+  ['#b01800','#060000','rgba(110,4,0,0.24)'],   ['#900000','#040000','rgba(120,2,0,0.28)'],
+  ['#80d8f8','#020510','rgba(0,20,50,0.14)'],   ['#60c8f0','#010408','rgba(0,30,60,0.16)'],
+  ['#40b8e8','#010306','rgba(0,40,70,0.18)'],   ['#20a8e0','#000205','rgba(0,50,80,0.20)'],
+  ['#0098d8','#000104','rgba(0,60,90,0.22)'],   ['#0070b0','#000003','rgba(0,70,100,0.26)'],
+  ['#c080ff','#06000f','rgba(30,0,60,0.16)'],   ['#b060ff','#050009','rgba(40,0,70,0.18)'],
+  ['#a040ff','#040007','rgba(50,0,80,0.20)'],   ['#9020ff','#030005','rgba(60,0,90,0.22)'],
+  ['#8000ff','#020003','rgba(70,0,100,0.24)'],  ['#6600ee','#010001','rgba(80,0,110,0.28)'],
+];
+const ZONE_CFG={
+  town:{name:'Town',color:'#c8c8b0',bg:'#000000',atm:null},
+  map: {name:'Map', color:'#ffdd44',bg:'#0a0005',atm:'rgba(60,0,20,0.22)'},
+};
+CAMPAIGN.forEach((z,i)=>{const[color,bg,atm]=_ZC[i];ZONE_CFG[z.id]={name:z.name,color,bg,atm};});
+
+const ZONE_SCALE={town:1.0,map:1.0};
+CAMPAIGN.forEach(z=>{ZONE_SCALE[z.id]=z.scale;});
+
+// ── Items ──────────────────────────────────────────────────────────────────
+const ITEMS = {
+  fire_gem:   {name:'Fire Gem',    icon:'🔴',slots:['wand1','wand2'],stats:{fireDmg:10}, cost:80, desc:'+10 Fire Dmg'},
+  water_gem:  {name:'Water Gem',   icon:'💧',slots:['wand1','wand2'],stats:{waterDmg:10},cost:80, desc:'+10 Water Dmg'},
+  ice_gem:    {name:'Ice Gem',     icon:'🔵',slots:['wand1','wand2'],stats:{iceDmg:10},  cost:80, desc:'+10 Ice Dmg'},
+  elec_gem:   {name:'Elec Gem',    icon:'💜',slots:['wand1','wand2'],stats:{elecDmg:10}, cost:80, desc:'+10 Elec Dmg'},
+  power_gem:  {name:'Power Gem',   icon:'🟠',slots:['wand1','wand2'],stats:{strength:6}, cost:100,desc:'+6 Strength'},
+  swift_gem:  {name:'Swift Gem',   icon:'🟢',slots:['wand1','wand2'],stats:{speed:0.5},  cost:100,desc:'+0.5 Speed'},
+  life_gem:   {name:'Life Gem',    icon:'🟡',slots:['wand1','wand2'],stats:{hp:25},       cost:120,desc:'+25 Max HP'},
+  iron_helm:  {name:'Iron Helmet', icon:'⛑',slots:['helmet'],        stats:{hp:15},       cost:90, desc:'+15 Max HP'},
+  mage_hood:  {name:'Mage Hood',   icon:'🎩',slots:['helmet'],        stats:{hp:10,speed:0.2},cost:140,desc:'+10 HP +0.2 Spd'},
+  iron_chest: {name:'Iron Chest',  icon:'🛡',slots:['chestplate'],    stats:{hp:25},       cost:140,desc:'+25 Max HP'},
+  mage_robe:  {name:'Mage Robe',   icon:'👘',slots:['chestplate'],    stats:{hp:15,strength:2},cost:160,desc:'+15 HP +2 Str'},
+  iron_legs:  {name:'Iron Legs',   icon:'🩱',slots:['leggings'],      stats:{hp:20},       cost:110,desc:'+20 Max HP'},
+  iron_boots: {name:'Iron Boots',  icon:'👟',slots:['shoes'],         stats:{speed:0.3},   cost:90, desc:'+0.3 Speed'},
+  swift_boots:{name:'Swift Boots', icon:'👢',slots:['shoes'],         stats:{speed:0.6,hp:5},cost:150,desc:'+0.6 Spd +5 HP'},
+  fire_wand:   {name:'Fire Wand',      icon:'🪄',slots:['wand1','wand2'],stats:{fireDmg:15},                  cost:180,desc:'+15 Fire Dmg'},
+  ice_wand:    {name:'Ice Wand',       icon:'❄', slots:['wand1','wand2'],stats:{iceDmg:15},                   cost:180,desc:'+15 Ice Dmg'},
+  thunder_rod: {name:'Thunder Rod',    icon:'⚡',slots:['wand1','wand2'],stats:{elecDmg:15},                   cost:180,desc:'+15 Elec Dmg'},
+  tide_staff:  {name:'Tide Staff',     icon:'🌊',slots:['wand1','wand2'],stats:{waterDmg:15},                  cost:180,desc:'+15 Water Dmg'},
+  // Tier 2 wands — drop in Acts II-III (better scaling)
+  wand2_fire:  {name:'Ember Wand',     icon:'🪄',slots:['wand1','wand2'],stats:{fireDmg:28,strength:6},        cost:380,desc:'+28 Fire +6 Str'},
+  wand2_ice:   {name:'Frost Wand',     icon:'❄', slots:['wand1','wand2'],stats:{iceDmg:28,strength:6},         cost:380,desc:'+28 Ice +6 Str'},
+  wand2_elec:  {name:'Storm Rod',      icon:'⚡',slots:['wand1','wand2'],stats:{elecDmg:28,strength:6},         cost:380,desc:'+28 Elec +6 Str'},
+  wand2_water: {name:'Tide Wand',      icon:'🌊',slots:['wand1','wand2'],stats:{waterDmg:28,strength:6},        cost:380,desc:'+28 Water +6 Str'},
+  // Tier 3 wands — drop in Acts III-IV (high-end)
+  wand3_fire:  {name:'Inferno Staff',  icon:'🔥',slots:['wand1','wand2'],stats:{fireDmg:48,strength:14,speed:0.3},cost:680,desc:'+48 Fire +14 Str +0.3 Spd'},
+  wand3_ice:   {name:'Blizzard Staff', icon:'❄', slots:['wand1','wand2'],stats:{iceDmg:48,strength:14,speed:0.3}, cost:680,desc:'+48 Ice +14 Str +0.3 Spd'},
+  wand3_elec:  {name:'Thunder Staff',  icon:'⚡',slots:['wand1','wand2'],stats:{elecDmg:48,strength:14,speed:0.3}, cost:680,desc:'+48 Elec +14 Str +0.3 Spd'},
+  wand3_water: {name:'Ocean Staff',    icon:'🌊',slots:['wand1','wand2'],stats:{waterDmg:48,strength:14,speed:0.3},cost:680,desc:'+48 Water +14 Str +0.3 Spd'},
+  // Skill gems (active abilities)
+  gem_meteor:   {name:'Meteor Storm',  icon:'☄',  slots:[],stats:{},cost:200,desc:'Active: Meteor rain',       type:'skill_gem', gemId:'meteor_storm'},
+  gem_icelance: {name:'Ice Lance',     icon:'🧊', slots:[],stats:{},cost:200,desc:'Active: Piercing lance',    type:'skill_gem', gemId:'ice_lance'},
+  gem_thunder:  {name:'Thunder Bolt',  icon:'⚡', slots:[],stats:{},cost:200,desc:'Active: Chain lightning',   type:'skill_gem', gemId:'thunder_bolt'},
+  gem_wave:     {name:'Tidal Wave',    icon:'🌊', slots:[],stats:{},cost:200,desc:'Active: Expanding wave',    type:'skill_gem', gemId:'tidal_wave'},
+  // Active skill gems - new batch
+  gem_flame_nova:     {name:'Flame Nova',     icon:'🔥',slots:[],stats:{},cost:200,desc:'Active: Fire ring burst',    type:'skill_gem',gemId:'flame_nova'},
+  gem_aqua_bolt:      {name:'Aqua Bolt',      icon:'💦',slots:[],stats:{},cost:200,desc:'Active: Piercing water bolt', type:'skill_gem',gemId:'aqua_bolt'},
+  gem_lightning_storm:{name:'Lightning Storm',icon:'🌩',slots:[],stats:{},cost:200,desc:'Active: Electric storm',     type:'skill_gem',gemId:'lightning_storm'},
+  gem_frost_nova:     {name:'Frost Nova',     icon:'❄', slots:[],stats:{},cost:200,desc:'Active: Instant ice burst',  type:'skill_gem',gemId:'frost_nova'},
+  gem_void_orb:       {name:'Void Orb',       icon:'🌑',slots:[],stats:{},cost:250,desc:'Active: Homing arcane orb',  type:'skill_gem',gemId:'void_orb'},
+  gem_blizzard:       {name:'Blizzard',       icon:'🌨',slots:[],stats:{},cost:200,desc:'Active: Ice shard storm',    type:'skill_gem',gemId:'blizzard'},
+  // Support gems
+  sup_damage:   {name:'Greater Dmg',   icon:'🔺', slots:[],stats:{},cost:150,desc:'Support: +40% skill dmg',  type:'support_gem',gemId:'greater_dmg'},
+  sup_chain:    {name:'Chain',         icon:'🔗', slots:[],stats:{},cost:150,desc:'Support: +1 target chain', type:'support_gem',gemId:'chain'},
+  sup_speed:    {name:'Faster Cast',   icon:'💨', slots:[],stats:{},cost:150,desc:'Support: -25% cooldown',   type:'support_gem',gemId:'faster_cast'},
+  // Currency
+  orb_of_mage:  {name:'Orb of Mage',   icon:'🔮', slots:[],stats:{},cost:0,  desc:'Rerolls all item stats',   type:'currency'},
+  control_orb:  {name:'Control Orb',   icon:'🌀', slots:[],stats:{},cost:0,  desc:'1% chance to copy item',   type:'currency'},
+  // Map fragments
+  map_t1:  {name:'Map Tier 1-4',  icon:'🗺',slots:[],stats:{},cost:0,desc:'Map tier 1-4',  type:'map',tier:1},
+  map_t5:  {name:'Map Tier 5-9',  icon:'🗺',slots:[],stats:{},cost:0,desc:'Map tier 5-9',  type:'map',tier:5},
+  map_t10: {name:'Map Tier 10-14',icon:'🗺',slots:[],stats:{},cost:0,desc:'Map tier 10-14',type:'map',tier:10},
+  map_t15: {name:'Map Tier 15-19',icon:'🗺',slots:[],stats:{},cost:0,desc:'Map tier 15-19',type:'map',tier:15},
+  map_t20: {name:'Map Tier 20',   icon:'🗺',slots:[],stats:{},cost:0,desc:'Map tier 20',   type:'map',tier:20},
+};
+const SHOP_LIST = ['fire_gem','water_gem','ice_gem','elec_gem','power_gem','swift_gem','life_gem',
+                   'iron_helm','mage_hood','iron_chest','mage_robe','iron_legs',
+                   'iron_boots','swift_boots','fire_wand','ice_wand','thunder_rod','tide_staff',
+                   'gem_meteor','gem_icelance','gem_thunder','gem_wave',
+                   'gem_flame_nova','gem_aqua_bolt','gem_lightning_storm',
+                   'gem_frost_nova','gem_void_orb','gem_blizzard',
+                   'sup_damage','sup_chain','sup_speed'];
+
+// ── RNG Equipment ──────────────────────────────────────────────────────────
+const EQUIP_BASES={
+  helmet:{name:'Helmet',    icon:'⛑', slots:['helmet'],       base:[{s:'hp',mn:8,mx:22}],         affixes:['defense','speed','regen','critChance'],gemSlots:0},
+  chest: {name:'Chestplate',icon:'🛡', slots:['chestplate'],   base:[{s:'hp',mn:15,mx:40},{s:'defense',mn:2,mx:8}], affixes:['hp','regen','range','critChance'],gemSlots:1},
+  legs:  {name:'Leggings',  icon:'🩱', slots:['leggings'],     base:[{s:'hp',mn:10,mx:28},{s:'defense',mn:1,mx:5}], affixes:['defense','speed','regen'],gemSlots:0},
+  boots: {name:'Boots',     icon:'👟', slots:['shoes'],        base:[{s:'speed',mn:0.2,mx:0.6}],  affixes:['hp','defense','speed'],gemSlots:0},
+  wand:  {name:'Wand',      icon:'🪄', slots:['wand1','wand2'],base:[{s:'fireDmg',mn:8,mx:28}],   affixes:['strength','critChance','range'],gemSlots:1},
+};
+const RARITY_CLR={normal:'#c0c0c0',magic:'#6699ff',rare:'#ffdd44'};
+const RARITY_NAMES={normal:'',magic:'',rare:'Rare '};
+const RARITY_AFF={normal:[0,1],magic:[1,2],rare:[3,4]};
+const AFFIX_RNG={hp:[5,25],defense:[1,8],speed:[0.1,0.3],regen:[1,4],critChance:[2,8],range:[5,20],strength:[1,6],
+  fireDmg:[3,12],waterDmg:[3,12],iceDmg:[3,12],elecDmg:[3,12]};
+let _rngSeq=0;
+function rr(mn,mx){return+(mn+Math.random()*(mx-mn)).toFixed(1);}
+function generateEquip(bk,elemNum,rarOvr){
+  const bd=EQUIP_BASES[bk];if(!bd)return null;
+  const r0=Math.random();
+  const rar=rarOvr||(r0<0.55?'normal':r0<0.85?'magic':'rare');
+  const[mnA,mxA]=RARITY_AFF[rar],nAff=mnA+Math.floor(Math.random()*(mxA-mnA+1));
+  const stats={};
+  const bdef=bk==='wand'&&elemNum?[{s:{1:'waterDmg',2:'fireDmg',3:'elecDmg',4:'iceDmg'}[elemNum]||'fireDmg',mn:8,mx:28}]:[...bd.base];
+  bdef.forEach(b=>{stats[b.s]=rr(b.mn,b.mx);});
+  const pool=[...bd.affixes];
+  for(let i=0;i<nAff&&pool.length;i++){
+    const idx=Math.floor(Math.random()*pool.length);const aff=pool.splice(idx,1)[0];
+    if(!stats[aff]){const[mn2,mx2]=AFFIX_RNG[aff]||[1,5];stats[aff]=rr(mn2,mx2);}
+  }
+  const gs=bd.gemSlots||0;
+  return{_id:'rng'+(++_rngSeq),baseType:bk,name:RARITY_NAMES[rar]+bd.name,icon:bd.icon,
+    slots:bd.slots,rarity:rar,stats,desc:'',gemSlots:gs,gems:Array(gs).fill(null),cost:0};
+}
+function getItemDat(item){if(!item)return null;return typeof item==='object'?item:ITEMS[item]||null;}
+
+// ── Skill Gems ─────────────────────────────────────────────────────────────
+const SKILL_GEMS={
+  // original 4
+  meteor_storm:   {name:'Meteor Storm',    icon:'☄', color:'#f27240',cooldown:120,desc:'Meteor rain',       element:'fire'},
+  ice_lance:      {name:'Ice Lance',       icon:'🧊',color:'#7adcf5',cooldown:60, desc:'Piercing lance',    element:'ice'},
+  thunder_bolt:   {name:'Thunder Bolt',    icon:'⚡',color:'#b06aff',cooldown:80, desc:'Chain lightning',   element:'elec'},
+  tidal_wave:     {name:'Tidal Wave',      icon:'🌊',color:'#70c1f2',cooldown:100,desc:'Water ring',        element:'water'},
+  // new 6 — any mage can use any gem; damage uses gem's element stat
+  flame_nova:     {name:'Flame Nova',      icon:'🔥',color:'#ff4400',cooldown:80, desc:'Expanding fire ring',element:'fire'},
+  aqua_bolt:      {name:'Aqua Bolt',       icon:'💦',color:'#4488ff',cooldown:45, desc:'3-bolt water spread',element:'water'},
+  lightning_storm:{name:'Lightning Storm', icon:'🌩',color:'#ffffaa',cooldown:110,desc:'Multi-strike storm', element:'elec'},
+  frost_nova:     {name:'Frost Nova',      icon:'❄', color:'#aaeeff',cooldown:65, desc:'Instant ice burst',  element:'ice'},
+  void_orb:       {name:'Void Orb',        icon:'🌑',color:'#8800ff',cooldown:95, desc:'Homing arcane orb',  element:'arcane'},
+  blizzard:       {name:'Blizzard',        icon:'🌨',color:'#88ccff',cooldown:130,desc:'Ice shard storm',    element:'ice'},
+};
+const SUPPORT_MODS={greater_dmg:{dmg:1.4},chain:{chain:1},faster_cast:{cd:0.75}};
+const SUPPORT_GEM_DEFS={
+  greater_dmg:{name:'Dmg+',icon:'🔺',color:'#ff8080'},
+  chain:      {name:'Chain',icon:'🔗',color:'#aaaaff'},
+  faster_cast:{name:'Fast', icon:'💨',color:'#80ff80'},
+};
+const GEM_SLOT_UNLOCK={3:25,4:40,5:50};
+
+// ── Maps ───────────────────────────────────────────────────────────────────
+const MAP_DEFS=Array.from({length:20},(_,i)=>({
+  tier:i+1,name:`Tier ${i+1}`,
+  monsterScale:1+i*0.3,monsterCount:10+i*3,bossScale:2+i*0.5,
+  reward:{gold:80+i*50,xp:150+i*80},
+}));
+
+// ── Map ────────────────────────────────────────────────────────────────────
+const map = [];
+for(let r=0;r<MH;r++){map[r]=[];for(let c=0;c<MW;c++)map[r][c]=T.GRASS;}
+
+function h1(c,r){return(((c+_mapSeed)*7+(r+_mapSeed)*13)*2654435761>>>0)%100;}
+function h2(c,r){return(((c+_mapSeed*3)*11+(r+_mapSeed*2)*17)*1234567891>>>0)%100;}
+function hF(c,r){return(((c+_mapSeed)*31+(r+_mapSeed)*19)*987654321>>>0)%4;}
+function hFl(c,r){return(((c+_mapSeed*5)*23+(r+_mapSeed*4)*29)*741852963>>>0)%100;}
+
+function clearMap(base){for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)map[r][c]=base;}
+
+function buildTownMap(){
+  clearMap(T.GRASS);
+
+  // Dense forest border around the whole map
+  for(let r=0;r<MH;r++) for(let c=0;c<MW;c++){
+    if(r<4||r>59||c<4||c>59) map[r][c]=T.TREE;
+    else if((r<6||r>57||c<6||c>57)&&h1(c,r)%100<75) map[r][c]=T.TREE;
+  }
+
+  // NE district — garden with pond (cols 37-59, rows 5-27)
+  for(let r=5;r<27;r++) for(let c=37;c<59;c++){
+    if(h2(c,r)%100<38) map[r][c]=T.TREE;
+    if(map[r][c]===T.GRASS&&hFl(c,r)%100<25) map[r][c]=T.FLOWER_R+(hFl(c,r)%3);
+  }
+  // Pond in garden
+  for(let r=8;r<23;r++) for(let c=43;c<57;c++){
+    const d=(c-50)*(c-50)/22+(r-15)*(r-15)/16;
+    if(d<0.5) map[r][c]=T.DEEP_WATER;
+    else if(d<1.0) map[r][c]=T.WATER;
+  }
+
+  // NW district — residential (cols 5-27, rows 5-27)
+  for(let r=5;r<27;r++) for(let c=5;c<27;c++){
+    if(h1(c+1,r+2)%100<28) map[r][c]=T.TREE;
+    if(map[r][c]===T.GRASS&&hFl(c+3,r)%100<14) map[r][c]=T.FLOWER_R+(hFl(c,r)%3);
+  }
+
+  // SE district — open meadows/fields (cols 37-59, rows 35-58)
+  for(let r=35;r<58;r++) for(let c=37;c<59;c++){
+    if(h2(c+3,r+1)%100<18) map[r][c]=T.TREE;
+    if(map[r][c]===T.GRASS&&hFl(c,r+2)%100<30) map[r][c]=T.FLOWER_R+(hFl(c+1,r)%3);
+  }
+
+  // SW district — scattered houses/gardens (cols 5-27, rows 35-58)
+  for(let r=35;r<58;r++) for(let c=5;c<27;c++){
+    if(h1(c,r+5)%100<20) map[r][c]=T.TREE;
+    if(map[r][c]===T.GRASS&&hFl(c+2,r+3)%100<16) map[r][c]=T.FLOWER_R+(hFl(c,r)%3);
+  }
+
+  // ── Main cobblestone cross roads ──
+  for(let r=4;r<60;r++){
+    map[r][28]=T.COBBLE;map[r][29]=T.COBBLE;map[r][30]=T.COBBLE;
+    map[r][31]=T.COBBLE;map[r][32]=T.COBBLE;map[r][33]=T.COBBLE;
+  }
+  for(let c=4;c<60;c++){
+    map[28][c]=T.COBBLE;map[29][c]=T.COBBLE;map[30][c]=T.COBBLE;
+    map[31][c]=T.COBBLE;map[32][c]=T.COBBLE;map[33][c]=T.COBBLE;
+  }
+
+  // ── Town square — wide plaza around road intersection ──
+  for(let r=23;r<39;r++) for(let c=23;c<39;c++) map[r][c]=T.COBBLE;
+
+  // ── Tower grounds — north plaza ──
+  for(let r=5;r<22;r++) for(let c=25;c<37;c++) map[r][c]=T.COBBLE;
+
+  // ── Secondary dirt roads ──
+  for(let c=5;c<59;c++){
+    if(TILE_DEF[map[17][c]].w&&map[17][c]!==T.COBBLE) map[17][c]=T.DIRT;
+    if(TILE_DEF[map[18][c]].w&&map[18][c]!==T.COBBLE) map[18][c]=T.DIRT;
+    if(TILE_DEF[map[44][c]].w&&map[44][c]!==T.COBBLE) map[44][c]=T.DIRT;
+    if(TILE_DEF[map[45][c]].w&&map[45][c]!==T.COBBLE) map[45][c]=T.DIRT;
+  }
+  for(let r=5;r<59;r++){
+    if(TILE_DEF[map[r][17]].w&&map[r][17]!==T.COBBLE) map[r][17]=T.DIRT;
+    if(TILE_DEF[map[r][18]].w&&map[r][18]!==T.COBBLE) map[r][18]=T.DIRT;
+    if(TILE_DEF[map[r][44]].w&&map[r][44]!==T.COBBLE) map[r][44]=T.DIRT;
+    if(TILE_DEF[map[r][45]].w&&map[r][45]!==T.COBBLE) map[r][45]=T.DIRT;
+  }
+
+  // ── Market cobblestone patches west of square ──
+  for(let r=19;r<28;r++) for(let c=6;c<23;c++)
+    if(TILE_DEF[map[r][c]].w&&h2(c,r)%100<55) map[r][c]=T.COBBLE;
+
+  // ── South entry road from beach ──
+  for(let r=50;r<60;r++){
+    map[r][28]=T.SAND;map[r][29]=T.SAND;map[r][30]=T.SAND;
+    map[r][31]=T.SAND;map[r][32]=T.SAND;map[r][33]=T.SAND;
+  }
+}
+
+function buildBeachMap(){
+  clearMap(T.SAND);
+  // Ocean on the west side
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++){
+    if(c<6)map[r][c]=T.DEEP_WATER;
+    else if(c<13)map[r][c]=T.WATER;
+  }
+  // Rocky shore patches
+  for(let r=0;r<MH;r++)for(let c=11;c<18;c++)
+    if(h1(c,r+4)%100<14)map[r][c]=T.ROCK;
+  // Inland grass starting around col 30
+  for(let r=0;r<MH;r++)for(let c=30;c<MW;c++){
+    if(h2(c,r)%100<40)map[r][c]=T.GRASS;
+    if(map[r][c]===T.GRASS&&h1(c+2,r+1)%100<55)map[r][c]=T.TREE;
+  }
+  // Mixed sand/grass transition zone
+  for(let r=0;r<MH;r++)for(let c=22;c<32;c++)
+    if(map[r][c]===T.SAND&&h2(c+1,r+3)%100<28)map[r][c]=T.GRASS;
+  // Flowers in grass
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if(map[r][c]===T.GRASS&&hFl(c,r)%100<10)map[r][c]=T.FLOWER_R+(hFl(c,r)%3);
+  // Main east path (rows 29-33) — cleared through all terrain
+  for(let c=12;c<MW;c++){
+    map[29][c]=T.SAND;map[30][c]=T.DIRT;map[31][c]=T.DIRT;map[32][c]=T.DIRT;map[33][c]=T.SAND;
+  }
+  // Spawn clearing (where player wakes up)
+  for(let r=27;r<36;r++)for(let c=12;c<23;c++)
+    if(map[r][c]!==T.WATER&&map[r][c]!==T.DEEP_WATER)map[r][c]=T.SAND;
+  // Boss/gate clearing at east end
+  for(let r=26;r<37;r++)for(let c=54;c<MW;c++)
+    if(map[r][c]===T.TREE||map[r][c]===T.ROCK)map[r][c]=T.GRASS;
+}
+
+function buildStormMap(){
+  clearMap(T.SPARK_GROUND);
+  // Rocky peaks
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if(h2(c,r)%100<32)map[r][c]=T.ROCK;
+  // Tall spires (dark rock clusters)
+  [[10,8],[20,20],[40,12],[55,8],[15,40],[48,30],[30,5],[5,50]].forEach(([cx,cr])=>{
+    for(let r=0;r<MH;r++)for(let c=0;c<MW;c++){
+      const d=(c-cx)*(c-cx)/16+(r-cr)*(r-cr)/12;
+      if(d<1.0)map[r][c]=T.ROCK;
+    }
+  });
+  // Clear paths
+  for(let r=0;r<MH;r++){map[r][30]=T.SPARK_GROUND;map[r][31]=T.SPARK_GROUND;map[r][32]=T.SPARK_GROUND;}
+  for(let c=0;c<MW;c++){map[20][c]=T.SPARK_GROUND;map[21][c]=T.SPARK_GROUND;}
+  for(let r=48;r<MH;r++)for(let c=22;c<42;c++)map[r][c]=T.SPARK_GROUND;
+}
+
+function buildForestMap(){
+  clearMap(T.GRASS);
+  // Dense trees
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if(h1(c,r)%100<68)map[r][c]=T.TREE;
+  // Flowers in clearings
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if(map[r][c]===T.GRASS&&hFl(c,r)%100<20)map[r][c]=T.FLOWER_R+(hFl(c,r)%3);
+  // Clear main paths
+  for(let r=0;r<MH;r++){map[r][30]=T.DIRT;map[r][31]=T.DIRT;map[r][32]=T.DIRT;}
+  for(let c=0;c<MW;c++){map[15][c]=T.DIRT;map[16][c]=T.DIRT;}
+  for(let c=0;c<MW;c++){map[35][c]=T.DIRT;map[36][c]=T.DIRT;}
+  for(let r=48;r<MH;r++)for(let c=22;c<42;c++)
+    if(map[r][c]===T.TREE)map[r][c]=T.GRASS;
+}
+
+function buildEmberMap(){
+  clearMap(T.GRASS);
+  // Lava everywhere
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if(hF(c,r)<=1)map[r][c]=T.LAVA_ROCK;
+  // Rocky obstacles
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if(map[r][c]===T.GRASS&&h2(c+5,r)%100<22)map[r][c]=T.ROCK;
+  // Lava rivers (diagonal strips)
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if((c+r)%12<3)map[r][c]=T.LAVA_ROCK;
+  // Paths
+  for(let r=0;r<MH;r++){map[r][30]=T.LAVA_ROCK;map[r][31]=T.LAVA_ROCK;map[r][32]=T.LAVA_ROCK;}
+  for(let c=0;c<MW;c++){map[20][c]=T.LAVA_ROCK;map[21][c]=T.LAVA_ROCK;}
+  for(let r=48;r<MH;r++)for(let c=22;c<42;c++)
+    if(map[r][c]===T.ROCK)map[r][c]=T.LAVA_ROCK;
+}
+
+function buildTundraMap(){
+  clearMap(T.SNOW);
+  // Ice rock formations
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++)
+    if(h2(c,r)%100<28)map[r][c]=T.ICE_ROCK;
+  // Frozen ponds
+  [[12,15],[40,20],[25,40],[50,45],[8,50]].forEach(([cx,cr])=>{
+    for(let r=0;r<MH;r++)for(let c=0;c<MW;c++){
+      const d=(c-cx)*(c-cx)/49+(r-cr)*(r-cr)/36;
+      if(d<0.5)map[r][c]=T.DEEP_WATER;else if(d<1.0)map[r][c]=T.WATER;
+    }
+  });
+  // Clear paths
+  for(let r=0;r<MH;r++){map[r][30]=T.SNOW;map[r][31]=T.SNOW;map[r][32]=T.SNOW;}
+  for(let c=0;c<MW;c++){map[20][c]=T.SNOW;map[21][c]=T.SNOW;}
+  for(let r=48;r<MH;r++)for(let c=22;c<42;c++)
+    if(map[r][c]===T.ICE_ROCK||map[r][c]===T.WATER||map[r][c]===T.DEEP_WATER)map[r][c]=T.SNOW;
+}
+
+let _mapSeed=0; // makes each zone look visually different
+function buildZoneMap(id){
+  if(id==='town'){buildTownMap();return;}
+  _mapSeed=id.split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+  const biome=CAMPAIGN_BY_ID[id]?.biome||id;
+  ({beach:buildBeachMap,forest:buildForestMap,ember:buildEmberMap,
+    tundra:buildTundraMap,storm:buildStormMap})[biome]?.();
+}
+
+// ── Mini-map ───────────────────────────────────────────────────────────────
+const MM_W=128,MM_H=128,MM_X=VW-MM_W-10,MM_Y=10;
+const mmC=document.createElement('canvas');mmC.width=MM_W;mmC.height=MM_H;
+const mmX=mmC.getContext('2d');
+const MM_CLR=['#3a7d44','#7a5c3a','#1a4a8a','#0e2e60','#1a4a1a','#5a5a5a',
+              '#c8b060','#d8eeff','#3a7d44','#3a7d44','#3a7d44','#4a2818','#2a4a5a','#3a7d44','#8a8070'];
+function rebuildMinimap(){
+  for(let r=0;r<MH;r++)for(let c=0;c<MW;c++){
+    mmX.fillStyle=MM_CLR[map[r][c]]||'#3a7d44';mmX.fillRect(c*2,r*2,2,2);
+  }
+}
+
+// ── Skill tree ─────────────────────────────────────────────────────────────
+const STAT_CLR={
+  iceDmg:'#7adcf5',elecDmg:'#b06aff',waterDmg:'#70c1f2',fireDmg:'#f27240',
+  strength:'#f0c040',speed:'#60d090',hp:'#ff6080',
+  defense:'#aac0ff',regen:'#ff90d0',critChance:'#ffe040',range:'#80ff80',
+};
+const STAT_SHORT={
+  waterDmg:'Wave',fireDmg:'Ember',iceDmg:'Frost',elecDmg:'Spark',
+  strength:'Power',speed:'Swift',hp:'Life',defense:'Guard',
+  regen:'Mend',critChance:'Luck',range:'Reach',
+};
+let stView={x:800,y:800,zoom:0.75,drag:false,moved:false,lx:0,ly:0};
+function stStoV(sx,sy){return{vx:stView.x+(sx-VW/2)/stView.zoom,vy:stView.y+(sy-VH/2)/stView.zoom};}
+
+function buildSTData(){
+  const nodes=[],edges=[];
+  function nd(id,lbl,stat,val,x,y,tier){nodes.push({id,lbl,stat,val,x,y,tier});}
+  function eg(a,b){edges.push([a,b]);}
+  function sat(pid,cx,cy,stat,val,count,r,aOff){
+    for(let i=0;i<count;i++){
+      const a=aOff+(i/count)*Math.PI*2;
+      const id=pid+'s'+i;
+      nd(id,STAT_SHORT[stat]||stat,stat,val,Math.round(cx+Math.cos(a)*r),Math.round(cy+Math.sin(a)*r),0);
+      eg(pid,id);if(i>0)eg(pid+'s'+(i-1),id);
+    }
+    if(count>2)eg(pid+'s'+(count-1),pid+'s0');
+  }
+  // ── Water sector (left, element 1) ──────────────────────────────────────
+  nd('w_ks','Tide Lord',   'waterDmg',15, 220,800, 2);
+  nd('w_n1','Flood',       'waterDmg', 8, 375,660, 1);
+  nd('w_n2','Current',     'speed',  0.5, 385,800, 1);
+  nd('w_n3','Deep Waters', 'hp',      25, 375,940, 1);
+  nd('w_n4','Torrent',     'waterDmg',10, 530,700, 1);
+  nd('w_n5','Mending',     'regen',    4, 530,800, 1);
+  nd('w_n6','Tide Pool',   'hp',       20, 530,900, 1);
+  nd('w_ik','Ocean Wrath', 'waterDmg',18, 650,800, 2);
+  sat('w_n1',375,660,'waterDmg',4,6,58,Math.PI*1.1);
+  sat('w_n2',385,800,'speed',0.2,5,55,Math.PI*0.85);
+  sat('w_n3',375,940,'hp',12,6,58,Math.PI*0.9);
+  sat('w_n4',530,700,'waterDmg',5,5,52,Math.PI*1.2);
+  sat('w_n5',530,800,'regen',2,4,50,Math.PI*0.5);
+  sat('w_n6',530,900,'hp',10,5,52,Math.PI*0.8);
+  eg('w_ks','w_n1');eg('w_ks','w_n2');eg('w_ks','w_n3');
+  eg('w_n1','w_n4');eg('w_n2','w_n4');eg('w_n2','w_n5');eg('w_n3','w_n5');eg('w_n3','w_n6');
+  eg('w_n4','w_ik');eg('w_n5','w_ik');eg('w_n6','w_ik');
+  // ── Fire sector (bottom, element 2) ─────────────────────────────────────
+  nd('f_ks','Flame Pact',  'fireDmg', 15, 800,1380, 2);
+  nd('f_n1','Blaze',       'fireDmg',  8, 665,1225, 1);
+  nd('f_n2','Inferno',     'strength', 5, 800,1215, 1);
+  nd('f_n3','Eruption',    'fireDmg',  8, 935,1225, 1);
+  nd('f_n4','Magma',       'fireDmg', 10, 700,1075, 1);
+  nd('f_n5','Embers',      'critChance',5,800,1065, 1);
+  nd('f_n6','Volcano',     'fireDmg', 12, 900,1075, 1);
+  nd('f_ik','Hellfire',    'fireDmg', 18, 800, 960, 2);
+  sat('f_n1',665,1225,'fireDmg',4,6,58,Math.PI*0.6);
+  sat('f_n2',800,1215,'strength',2,5,55,Math.PI*0.35);
+  sat('f_n3',935,1225,'fireDmg',4,6,58,Math.PI*0.4);
+  sat('f_n4',700,1075,'fireDmg',5,5,52,Math.PI*0.7);
+  sat('f_n5',800,1065,'critChance',2,4,50,Math.PI*0.25);
+  sat('f_n6',900,1075,'fireDmg',6,5,52,Math.PI*0.3);
+  eg('f_ks','f_n1');eg('f_ks','f_n2');eg('f_ks','f_n3');
+  eg('f_n1','f_n4');eg('f_n2','f_n4');eg('f_n2','f_n5');eg('f_n3','f_n5');eg('f_n3','f_n6');
+  eg('f_n4','f_ik');eg('f_n5','f_ik');eg('f_n6','f_ik');
+  // ── Electric sector (right, element 3) ──────────────────────────────────
+  nd('e_ks','Arc Pact',    'elecDmg', 15, 1380,800, 2);
+  nd('e_n1','Storm',       'elecDmg',  8, 1225,665, 1);
+  nd('e_n2','Zap',         'speed',  0.5, 1215,800, 1);
+  nd('e_n3','Thunder',     'defense',  5, 1225,935, 1);
+  nd('e_n4','Chain',       'elecDmg', 10, 1070,700, 1);
+  nd('e_n5','Shield',      'defense',  6, 1070,800, 1);
+  nd('e_n6','Surge',       'elecDmg',  8, 1070,900, 1);
+  nd('e_ik','Supernova',   'elecDmg', 18,  950,800, 2);
+  sat('e_n1',1225,665,'elecDmg',4,6,58,Math.PI*1.9);
+  sat('e_n2',1215,800,'speed',0.2,5,55,Math.PI*1.65);
+  sat('e_n3',1225,935,'defense',2,6,58,Math.PI*1.4);
+  sat('e_n4',1070,700,'elecDmg',5,5,52,Math.PI*1.8);
+  sat('e_n5',1070,800,'defense',3,4,50,Math.PI*1.5);
+  sat('e_n6',1070,900,'elecDmg',4,5,52,Math.PI*1.2);
+  eg('e_ks','e_n1');eg('e_ks','e_n2');eg('e_ks','e_n3');
+  eg('e_n1','e_n4');eg('e_n2','e_n4');eg('e_n2','e_n5');eg('e_n3','e_n5');eg('e_n3','e_n6');
+  eg('e_n4','e_ik');eg('e_n5','e_ik');eg('e_n6','e_ik');
+  // ── Ice sector (top, element 4) ─────────────────────────────────────────
+  nd('i_ks','Frost Pact',  'iceDmg',  15,  800, 220, 2);
+  nd('i_n1','Chill',       'iceDmg',   8,  665, 375, 1);
+  nd('i_n2','Blizzard',    'hp',       25,  800, 385, 1);
+  nd('i_n3','Glacial',     'iceDmg',   8,  935, 375, 1);
+  nd('i_n4','Ice Storm',   'iceDmg',  10,  700, 530, 1);
+  nd('i_n5','Frost Nova',  'critChance',5,  800, 540, 1);
+  nd('i_n6','Permafrost',  'iceDmg',  12,  900, 530, 1);
+  nd('i_ik','Glacial Wall','iceDmg',  18,  800, 640, 2);
+  sat('i_n1',665,375,'iceDmg',4,6,58,Math.PI*1.4);
+  sat('i_n2',800,385,'hp',12,5,55,Math.PI*1.65);
+  sat('i_n3',935,375,'iceDmg',4,6,58,Math.PI*1.9);
+  sat('i_n4',700,530,'iceDmg',5,5,52,Math.PI*1.3);
+  sat('i_n5',800,540,'critChance',2,4,50,Math.PI*1.75);
+  sat('i_n6',900,530,'iceDmg',6,5,52,Math.PI*1.7);
+  eg('i_ks','i_n1');eg('i_ks','i_n2');eg('i_ks','i_n3');
+  eg('i_n1','i_n4');eg('i_n2','i_n4');eg('i_n2','i_n5');eg('i_n3','i_n5');eg('i_n3','i_n6');
+  eg('i_n4','i_ik');eg('i_n5','i_ik');eg('i_n6','i_ik');
+  // ── Center hub ───────────────────────────────────────────────────────────
+  nd('c_n1','Power',       'strength', 6, 720,730, 1);
+  nd('c_n2','Precision',   'critChance',6,880,730, 1);
+  nd('c_n3','Resilience',  'defense',  6, 720,870, 1);
+  nd('c_n4','Vitality',    'hp',       30, 880,870, 1);
+  nd('c_ks','Transcendence','strength',10, 800,800, 2);
+  sat('c_n1',720,730,'strength',3,5,50,Math.PI*1.0);
+  sat('c_n2',880,730,'critChance',3,5,50,Math.PI*1.8);
+  sat('c_n3',720,870,'defense',3,5,50,Math.PI*0.2);
+  sat('c_n4',880,870,'hp',15,5,50,Math.PI*1.6);
+  eg('w_ik','c_n1');eg('w_ik','c_n3');
+  eg('f_ik','c_n3');eg('f_ik','c_n4');
+  eg('e_ik','c_n2');eg('e_ik','c_n4');
+  eg('i_ik','c_n1');eg('i_ik','c_n2');
+  eg('c_n1','c_ks');eg('c_n2','c_ks');eg('c_n3','c_ks');eg('c_n4','c_ks');
+  eg('c_n1','c_n2');eg('c_n2','c_n4');eg('c_n4','c_n3');eg('c_n3','c_n1');
+  return{nodes,edges};
+}
+
+const {nodes:_stRaw,edges:ST_EDGES}=buildSTData();
+const START_NODE={1:'w_ks',2:'f_ks',3:'e_ks',4:'i_ks'};
+const stNodes=_stRaw.map(d=>({...d,unlocked:d.id===START_NODE[playerElement],available:false}));
+const stAdj={};stNodes.forEach(n=>{stAdj[n.id]=[];});
+ST_EDGES.forEach(([a,b])=>{if(stAdj[a]&&stAdj[b]){stAdj[a].push(b);stAdj[b].push(a);}});
+function refreshAvailability(){stNodes.forEach(n=>{if(n.unlocked){n.available=false;return;}n.available=!!(stAdj[n.id]?.some(id=>stNodes.find(x=>x.id===id)?.unlocked));});}
+refreshAvailability();
+// Center view on player's start node
+(()=>{const sn=stNodes.find(n=>n.id===START_NODE[playerElement]);if(sn){stView.x=sn.x;stView.y=sn.y;}})();
+
+
+// ── Player ─────────────────────────────────────────────────────────────────
+const BEACH_SPAWN={wx:15*TS+TS/2,wy:31*TS+TS/2};
+const TOWN_SPAWN ={wx:31*TS+TS/2,wy:32*TS+TS/2};
+const ZONE_SPAWN ={wx:32*TS+TS/2,wy:53*TS};
+
+const player={
+  wx:BEACH_SPAWN.wx,wy:BEACH_SPAWN.wy,hw:10,hh:11,facing:'down',
+  hp:100,maxHp:100,xp:0,xpToNext:100,level:1,skillPoints:0,attackTimer:0,gold:0,
+  ascended:false,mapTier:0,
+  gemCooldowns:{}, // gemId→frames remaining
+  stats:{hp:0,strength:0,speed:0,fireDmg:0,waterDmg:0,iceDmg:0,elecDmg:0,defense:0,regen:0,critChance:0,range:0},
+  inventory:{helmet:null,chestplate:null,leggings:null,shoes:null,wand1:null,wand2:null,bag:[]},
+};
+
+function getEquipStats(){
+  const s={hp:0,strength:0,speed:0,fireDmg:0,waterDmg:0,iceDmg:0,elecDmg:0,defense:0,regen:0,critChance:0,range:0};
+  ['helmet','chestplate','leggings','shoes','wand1','wand2'].forEach(k=>{
+    const it=getItemDat(player.inventory[k]);
+    if(it&&it.stats)Object.entries(it.stats).forEach(([sk,v])=>s[sk]=(s[sk]||0)+v);
+  });return s;
+}
+function getMaxHp(){return player.maxHp+player.stats.hp+getEquipStats().hp;}
+function getAttack(){
+  const eq=getEquipStats();
+  const eDmg={1:player.stats.waterDmg+eq.waterDmg,2:player.stats.fireDmg+eq.fireDmg,
+               3:player.stats.elecDmg+eq.elecDmg,4:player.stats.iceDmg+eq.iceDmg}[playerElement]||0;
+  return 10+(player.stats.strength+eq.strength)*2+eDmg;
+}
+function getSpeed(){return 2.5+player.stats.speed+getEquipStats().speed;}
+function getGemBaseDmg(gemId){
+  const gd=SKILL_GEMS[gemId];if(!gd)return getAttack()*2;
+  const eq=getEquipStats();
+  const str=(player.stats.strength+eq.strength)*2;
+  if(gd.element==='arcane')return Math.round(10+str*3);
+  const all={fire:player.stats.fireDmg+eq.fireDmg,water:player.stats.waterDmg+eq.waterDmg,
+             ice:player.stats.iceDmg+eq.iceDmg,elec:player.stats.elecDmg+eq.elecDmg};
+  const gemElem=all[gd.element]||0;
+  const nativeKey={1:'water',2:'fire',3:'elec',4:'ice'}[playerElement];
+  const nativeElem=all[nativeKey]||0;
+  return Math.round(10+str+Math.max(gemElem,nativeElem*0.4)*1.5);
+}
+function equipItem(item){
+  const it=getItemDat(item);if(!it||!it.slots||!it.slots.length)return;
+  const iid=typeof item==='object'?item._id:item;
+  const slot=it.slots.find(s=>!player.inventory[s])||it.slots[0];
+  const old=player.inventory[slot];if(old)player.inventory.bag.push(old);
+  player.inventory[slot]=item;
+  const idx=player.inventory.bag.findIndex(x=>(typeof x==='object'?x._id:x)===iid);
+  if(idx>=0)player.inventory.bag.splice(idx,1);
+}
+function unequipSlot(s){
+  const it=player.inventory[s];if(!it)return;
+  player.inventory.bag.push(it);player.inventory[s]=null;
+}
+
+// ── Gates ──────────────────────────────────────────────────────────────────
+// Town entry gates (one per act, single entry point to each act's first zone)
+const TOWN_ACT_GATES=[
+  {zone:'a1_1',label:'Act I — The Water',        color:'#a0d0f0',wx:31*TS+TS/2,wy:57*TS,      vert:false,actReq:1},
+  {zone:'a2_1',label:'Act II — Uncontrolled Fire',color:'#f08040',wx:58*TS+TS/2,wy:31*TS+TS/2,vert:true, actReq:2},
+  {zone:'a3_1',label:'Act III — Iced Automaton',  color:'#80d8f8',wx:4*TS+TS/2, wy:31*TS+TS/2,vert:true, actReq:3},
+  {zone:'a4_1',label:'Act IV — Thunder',          color:'#c080ff',wx:32*TS+TS/2,wy:8*TS,       vert:true, actReq:4},
+];
+// Map Portal (unlocked after all 4 act bosses)
+const MAPS_PORTAL={wx:31*TS+TS/2,wy:18*TS+TS/2,label:'Map Portal',color:'#ffdd44',vert:false,zone:'__maps__',isMapsPortal:true};
+// Return-to-town spawn positions per act
+const ACT_TOWN_RETURN={1:{wx:31*TS+TS/2,wy:54*TS},2:{wx:55*TS+TS/2,wy:31*TS},3:{wx:7*TS+TS/2,wy:31*TS},4:{wx:32*TS+TS/2,wy:10*TS}};
+
+function getActiveGates(){
+  if(currentZoneId==='town'){
+    const gs=TOWN_ACT_GATES.map(g=>({...g,locked:!isActUnlocked(g.actReq)}));
+    if(actBossDefeated[3])gs.push({...MAPS_PORTAL,locked:false});
+    return gs;
+  }
+  if(currentZoneId==='map'){
+    return [{wx:32*TS+TS/2,wy:59*TS,label:'Return to Town',color:'#cccccc',vert:false,zone:'town'}];
+  }
+  const z=CAMPAIGN_BY_ID[currentZoneId];
+  if(!z)return [];
+  const gates=[];
+  const prev=campaignPrev(currentZoneId);
+  const next=campaignNext(currentZoneId);
+  // Back gate
+  if(prev){
+    const label=prev==='town'?'Return to Town':(ZONE_CFG[prev]?.name||prev);
+    const color=prev==='town'?'#c8c8b0':(ZONE_CFG[prev]?.color||'#aaa');
+    if(z.biome==='beach')
+      gates.push({wx:4*TS+TS/2,wy:31*TS+TS/2,label,color,vert:true,zone:prev,locked:false});
+    else
+      gates.push({wx:32*TS+TS/2,wy:5*TS+TS/2,label,color,vert:false,zone:prev,locked:false});
+  }
+  // Forward gate (locked in boss zone until boss killed)
+  if(next){
+    const bossLocked=!!(z.boss&&!actBossDefeated[z.act-1]);
+    const label=next==='town'?'Return to Town':(ZONE_CFG[next]?.name||next);
+    const color=next==='town'?'#c8c8b0':(ZONE_CFG[next]?.color||'#aaa');
+    if(z.biome==='beach')
+      gates.push({wx:61*TS+TS/2,wy:31*TS+TS/2,label,color,vert:true,zone:next,locked:bossLocked,bossLocked});
+    else
+      gates.push({wx:32*TS+TS/2,wy:59*TS,label,color,vert:false,zone:next,locked:bossLocked,bossLocked});
+  }
+  return gates;
+}
+
+// ── NPCs ───────────────────────────────────────────────────────────────────
+const NPCS=[
+  {id:'shop',  wx:23*TS+TS/2,wy:26*TS,label:'SHOP',  color:'#f0c040',interact:'shop'},
+  {id:'quests',wx:40*TS,     wy:26*TS,label:'QUESTS',color:'#40c0f0',interact:'quest'},
+];
+
+// ── Monsters ───────────────────────────────────────────────────────────────
+const MTYPE=[
+  {name:'Slime',    col:'#888888',hp:30, atk:4, spd:0.7, xp:15, gold:5,  r:10,drops:[{id:'life_gem', ch:0.05},{baseType:'helmet',ch:0.06}]},
+  {name:'Fire Imp', col:'#e05030',hp:50, atk:7, spd:1.1, xp:30, gold:10, r:11,drops:[{id:'fire_gem', ch:0.18},{baseType:'wand',  ch:0.08,elem:true}]},
+  {name:'Ice Golem',col:'#2090b8',hp:80, atk:10,spd:0.6, xp:45, gold:15, r:13,drops:[{id:'ice_gem',  ch:0.18},{baseType:'chest', ch:0.10}]},
+  {name:'Th.Wisp',  col:'#8833ff',hp:40, atk:6, spd:1.3, xp:35, gold:12, r:9, drops:[{id:'elec_gem', ch:0.18},{baseType:'boots', ch:0.08}]},
+  {name:'W.Sprite', col:'#5db8ff',hp:45, atk:6, spd:0.9, xp:30, gold:10, r:10,drops:[{id:'water_gem',ch:0.18},{baseType:'legs',  ch:0.08}]},
+  {name:'Guardian', col:'#8B0000',hp:400,atk:20,spd:0.75,xp:250,gold:80, r:20,drops:[{id:'power_gem',ch:1.0},{baseType:'wand',ch:1.0,elem:true,rar:'rare'},{baseType:'chest',ch:0.7,rar:'rare'}]},
+  // Act bosses (types 6-9)
+  {name:'The Water, Failed to Take Shape',col:'#1a60c0',hp:1200,atk:28,spd:0.55,xp:800, gold:200,r:26,isActBoss:true,actNum:1,
+   drops:[{id:'wand2_water',ch:1.0},{baseType:'chest',ch:1.0,rar:'rare'},{id:'gem_wave',ch:1.0}]},
+  {name:'Uncontrolled Fire',             col:'#ff3300',hp:1800,atk:40,spd:0.65,xp:1200,gold:300,r:27,isActBoss:true,actNum:2,
+   drops:[{id:'wand2_fire',ch:1.0},{baseType:'chest',ch:1.0,rar:'rare'},{id:'gem_meteor',ch:1.0}]},
+  {name:'The Iced Automaton',            col:'#00ccee',hp:2600,atk:55,spd:0.45,xp:1800,gold:450,r:28,isActBoss:true,actNum:3,
+   drops:[{id:'wand3_ice',ch:1.0},{baseType:'chest',ch:1.0,rar:'rare'},{id:'gem_blizzard',ch:1.0}]},
+  {name:'The Thunder Manifestation',     col:'#cc44ff',hp:3500,atk:75,spd:0.80,xp:2500,gold:600,r:30,isActBoss:true,actNum:4,
+   drops:[{id:'wand3_elec',ch:1.0},{baseType:'chest',ch:1.0,rar:'rare'},{id:'gem_lightning_storm',ch:1.0}]},
+];
+const TOWN_SPAWNS=[
+  // Slimes in gardens and outskirts
+  {t:0,c:10,r:10},{t:0,c:8, r:44},{t:0,c:55,r:44},{t:0,c:50,r:55},{t:0,c:12,r:55},
+  // Water sprites near the pond
+  {t:4,c:44,r:10},{t:4,c:52,r:18},{t:4,c:46,r:6},
+  // Fire Imps in SE fields
+  {t:1,c:43,r:46},{t:1,c:51,r:52},{t:1,c:56,r:42},
+  // Thunder Wisps in NE forest
+  {t:3,c:41,r:8},{t:3,c:55,r:14},{t:3,c:49,r:22},
+  // Ice Golems in SW outskirts
+  {t:2,c:8,r:50},{t:2,c:15,r:57},
+];
+// Monster configs + drop tier derived from CAMPAIGN
+const ZONE_MONSTER_CFG=Object.fromEntries(CAMPAIGN.map(z=>[z.id,z.mc]));
+let zoneDropTier=1; // updated in loadZone; controls wand drop quality
+
+const monsters=[];
+
+function mkMonster(t,wx,wy){
+  const mt=MTYPE[t];
+  return{wx,wy,ox:wx,oy:wy,hp:mt.hp,maxHp:mt.hp,type:t,atk:mt.atk,spd:mt.spd,
+         xpReward:mt.xp,goldReward:mt.gold,r:mt.r,state:'wander',
+         wanderTimer:Math.random()*80|0,vx:0,vy:0,attackTimer:60,
+         dying:false,deathTimer:0,respawnTimer:0};
+}
+
+function scaleMonster(m,sc){
+  const mt=MTYPE[m.type];
+  m.hp=Math.round(mt.hp*sc);m.maxHp=m.hp;
+  m.atk=Math.round(mt.atk*sc);
+  m.xpReward=Math.round(mt.xp*sc);m.goldReward=Math.round(mt.gold*sc);
+  return m;
+}
+function spawnZoneMonsters(id){
+  monsters.length=0;
+  if(id==='town'||id==='map')return;
+  const sc=ZONE_SCALE[id]||1.0;
+  (ZONE_MONSTER_CFG[id]||[]).forEach(({t,n})=>{
+    let placed=0,tries=0;
+    while(placed<n&&tries<600){
+      tries++;
+      const c=4+Math.floor(Math.random()*(MW-8)),r=4+Math.floor(Math.random()*44);
+      if(walkable(c*TS+TS/2,r*TS+TS/2)){monsters.push(scaleMonster(mkMonster(t,c*TS+TS/2,r*TS+TS/2),sc));placed++;}
+    }
+  });
+  // Act boss in boss arenas (if not yet defeated)
+  const z=CAMPAIGN_BY_ID[id];
+  if(z?.boss&&!actBossDefeated[z.act-1]){
+    const biome=z.biome;
+    const bx=biome==='beach'?56*TS+TS/2:32*TS+TS/2;
+    const by=biome==='beach'?31*TS+TS/2:50*TS;
+    monsters.push(scaleMonster(mkMonster(z.boss,bx,by),1.0));
+  }
+  // Mid-act guardian milestone (seq 3-5 non-boss zones)
+  if(z&&!z.boss&&z.seq>=3){
+    monsters.push(scaleMonster(mkMonster(5,32*TS+TS/2,12*TS),sc*0.7));
+  }
+}
+
+// ── Kill tracking & act state ──────────────────────────────────────────────
+const killCounts=[0,0,0,0,0,0,0,0,0,0]; // one per MTYPE
+const actBossDefeated=[false,false,false,false]; // acts 1-4
+const zonesVisited=new Set();
+function isActUnlocked(n){return n<=1||actBossDefeated[n-2];}
+
+// ── Act-based quest system ─────────────────────────────────────────────────
+const ACT_QUESTS=[
+  // ── Act 1: The Water ──────────────────────────────────────────────────
+  {id:'a1q1',act:1,name:'Washed Ashore',      desc:'Enter the Beach',
+   reward:{gold:30,xp:50},         check:()=>zonesVisited.has('beach')},
+  {id:'a1q2',act:1,name:'Shore Patrol',        desc:'Defeat 10 monsters',
+   reward:{gold:80,xp:120,item:'water_gem'}, check:()=>killCounts.reduce((a,b)=>a+b,0)>=10},
+  {id:'a1q3',act:1,name:'Into the Forest',     desc:'Enter the Rainy Forest',
+   reward:{gold:50,xp:80},         check:()=>zonesVisited.has('forest')},
+  {id:'a1q4',act:1,name:'Face the Formless',   desc:'Defeat The Water, Failed to Take Shape',
+   reward:{gold:200,xp:500,item:'gem_wave'}, check:()=>actBossDefeated[0]},
+  // ── Act 2: Uncontrolled Fire ──────────────────────────────────────────
+  {id:'a2q1',act:2,name:'Into the Wastes',     desc:'Enter the Ember Wastes',
+   reward:{gold:80,xp:120},        check:()=>zonesVisited.has('ember')},
+  {id:'a2q2',act:2,name:'Fire Walk',           desc:'Defeat 10 Fire Imps',
+   reward:{gold:120,xp:180,item:'fire_gem'}, check:()=>killCounts[1]>=10},
+  {id:'a2q3',act:2,name:'Deeper Flames',       desc:'Enter the Ember Depths',
+   reward:{gold:100,xp:150},       check:()=>zonesVisited.has('ember_depths')},
+  {id:'a2q4',act:2,name:'Quench the Rage',     desc:'Defeat Uncontrolled Fire',
+   reward:{gold:400,xp:1000,item:'gem_meteor'}, check:()=>actBossDefeated[1]},
+  // ── Act 3: The Iced Automaton ─────────────────────────────────────────
+  {id:'a3q1',act:3,name:'Frozen Frontier',     desc:'Enter the Frozen Tundra',
+   reward:{gold:150,xp:220},       check:()=>zonesVisited.has('tundra')},
+  {id:'a3q2',act:3,name:'Golem Slayer',        desc:'Defeat 8 Ice Golems',
+   reward:{gold:200,xp:300,item:'ice_gem'}, check:()=>killCounts[2]>=8},
+  {id:'a3q3',act:3,name:'The Glacial Core',    desc:'Enter the Glacial Core',
+   reward:{gold:180,xp:260},       check:()=>zonesVisited.has('glacial_core')},
+  {id:'a3q4',act:3,name:'Shatter the Machine', desc:'Defeat The Iced Automaton',
+   reward:{gold:700,xp:1800,item:'gem_blizzard'}, check:()=>actBossDefeated[2]},
+  // ── Act 4: Thunder Manifestation ──────────────────────────────────────
+  {id:'a4q1',act:4,name:'Storm Warning',       desc:'Enter the Storm Peaks',
+   reward:{gold:250,xp:380},       check:()=>zonesVisited.has('storm')},
+  {id:'a4q2',act:4,name:'Eye of the Storm',    desc:'Defeat 15 Thunder Wisps',
+   reward:{gold:350,xp:500,item:'elec_gem'}, check:()=>killCounts[3]>=15},
+  {id:'a4q3',act:4,name:'Summit Run',          desc:'Enter the Storm Summit',
+   reward:{gold:300,xp:450},       check:()=>zonesVisited.has('storm_summit')},
+  {id:'a4q4',act:4,name:'Silence the Thunder', desc:'Defeat The Thunder Manifestation',
+   reward:{gold:1200,xp:3000,item:'gem_lightning_storm'}, check:()=>actBossDefeated[3]},
+];
+const questStates=ACT_QUESTS.map(q=>({...q,status:'active'}));
+function updateQuests(){
+  questStates.forEach(q=>{
+    if(q.status==='active'&&isActUnlocked(q.act)&&q.check())q.status='ready';
+  });
+}
+function claimQuest(i){
+  const q=questStates[i];if(q.status!=='ready')return;
+  player.gold+=q.reward.gold||0;player.xp+=q.reward.xp||0;
+  if(q.reward.item)player.inventory.bag.push(q.reward.item);
+  q.status='claimed';checkLevelUp();
+}
+
+// ── Particles ──────────────────────────────────────────────────────────────
+const particles=[];
+function spawnP(wx,wy,vx,vy,life,color,size){
+  if(particles.length>=280)return;
+  particles.push({wx,wy,vx,vy,life,maxLife:life,color,size});
+}
+function spawnBurst(wx,wy,color,n=6){
+  for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,spd=1+Math.random()*2.5;
+    spawnP(wx,wy,Math.cos(a)*spd,Math.sin(a)*spd,10+Math.random()*8|0,color,2.5);}
+}
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.wx+=p.vx;p.wy+=p.vy;p.life--;
+    if(p.life<=0){particles[i]=particles[particles.length-1];particles.pop();}
+  }
+}
+function spawnZoneParticles(){
+  if(frame%2!==0)return;
+  const id=currentZoneId;
+  if(id==='beach'){
+    const bc0=Math.floor(camera.x/TS),bc1=Math.min(MW,Math.ceil((camera.x+VW)/TS));
+    const br0=Math.floor(camera.y/TS),br1=Math.min(MH,Math.ceil((camera.y+VH)/TS));
+    for(let r=br0;r<br1;r++)for(let c=bc0;c<bc1;c++){
+      const t=map[r][c];
+      if((t===T.WATER||t===T.DEEP_WATER)&&Math.random()<0.012)
+        spawnP(c*TS+Math.random()*TS,r*TS+Math.random()*TS,
+          (Math.random()-.5)*0.6,(Math.random()-.5)*0.4,
+          30+Math.random()*20|0,'rgba(180,230,255,0.6)',1.5);
+    }
+  }
+  if(id==='town'||id==='beach'){
+    const c0=Math.floor(camera.x/TS),c1=Math.min(MW,Math.ceil((camera.x+VW)/TS));
+    const r0=Math.floor(camera.y/TS),r1=Math.min(MH,Math.ceil((camera.y+VH)/TS));
+    for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++){
+      const t=map[r][c];
+      if(t===T.LAVA_ROCK&&Math.random()<0.025)
+        spawnP(c*TS+Math.random()*TS,r*TS+TS,(Math.random()-.5)*0.3,-0.5-Math.random()*0.4,
+          25+Math.random()*15|0,`rgba(255,${60+Math.random()*80|0},0,0.75)`,1.5);
+      if(t===T.SPARK_GROUND&&Math.random()<0.018)
+        spawnP(c*TS+Math.random()*TS,r*TS+Math.random()*TS,(Math.random()-.5)*0.5,(Math.random()-.5)*0.5,
+          8+Math.random()*8|0,'rgba(200,160,255,0.85)',1.5);
+      if(t===T.SNOW&&Math.random()<0.018)
+        spawnP(c*TS+Math.random()*TS,r*TS,(Math.random()-.5)*0.25,0.4+Math.random()*0.3,
+          40+Math.random()*20|0,'rgba(200,240,255,0.65)',1.5);
+    }
+  }
+  if(id==='storm'){
+    const c0=Math.floor(camera.x/TS),c1=Math.min(MW,Math.ceil((camera.x+VW)/TS));
+    const r0=Math.floor(camera.y/TS),r1=Math.min(MH,Math.ceil((camera.y+VH)/TS));
+    for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++)
+      if(map[r][c]===T.SPARK_GROUND&&Math.random()<0.05)
+        spawnP(c*TS+Math.random()*TS,r*TS+Math.random()*TS,(Math.random()-.5)*1,(Math.random()-.5)*1,
+          10+Math.random()*12|0,'rgba(220,180,255,0.9)',2);
+  }
+  if(id==='ember'){
+    const c0=Math.floor(camera.x/TS),c1=Math.min(MW,Math.ceil((camera.x+VW)/TS));
+    const r0=Math.floor(camera.y/TS),r1=Math.min(MH,Math.ceil((camera.y+VH)/TS));
+    for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++)
+      if(map[r][c]===T.LAVA_ROCK&&Math.random()<0.05)
+        spawnP(c*TS+Math.random()*TS,r*TS,(Math.random()-.5)*0.4,-0.7-Math.random()*0.8,
+          20+Math.random()*18|0,`rgba(255,${50+Math.random()*90|0},0,0.8)`,1.8);
+  }
+  if(id==='tundra'){
+    if(frame%3===0)for(let i=0;i<4;i++)
+      spawnP(camera.x+Math.random()*VW,camera.y-4,(Math.random()-.5)*0.3+0.2,0.5+Math.random()*0.4,
+        50+Math.random()*20|0,'rgba(210,240,255,0.7)',1.5);
+  }
+  if(id==='forest'){
+    if(frame%2===0)for(let i=0;i<5;i++)
+      spawnP(camera.x+Math.random()*VW,camera.y-4,(Math.random()-.5)*0.4+0.2,1.5+Math.random()*1,
+        18+Math.random()*8|0,'rgba(100,150,200,0.45)',1.2);
+  }
+}
+
+// ── Camera ─────────────────────────────────────────────────────────────────
+const camera={x:0,y:0};
+function updateCamera(){
+  camera.x=Math.max(0,Math.min(player.wx-VW/2,WORLD_W-VW));
+  camera.y=Math.max(0,Math.min(player.wy-VH/2,WORLD_H-VH));
+}
+
+// ── Zone system ────────────────────────────────────────────────────────────
+let currentZoneId='beach';
+let enteredFromZone=null;
+let zoneAnnounce={name:'',color:'#fff',timer:0};
+const transition={phase:'none',timer:0,next:''};// phase: none|out|in
+let townBossDefeated=false;
+let wakeState='sleeping'; // sleeping|waking|playing
+let wakeTimer=0,wakeMessageTimer=0,wakeMessage='';
+const barrelObjs=[{wx:-60,wy:31*TS-12,vx:1.6,landed:false},{wx:-110,wy:32*TS+8,vx:1.3,landed:false}];
+const groundDrops=[];
+const projectiles=[]; // skill gem effects
+let lockedMsgTimer=0,lockedMsgText='',regenTick=0;
+let mapOpen=false,mapCompleteDone=false;
+let invSelectedSlot=null; // for gem socketing
+let currencyMode={active:false,currId:null}; // for currency use
+let mapFragRects=[];
+
+function startTransition(zoneId){
+  if(transition.phase!=='none')return;
+  transition.phase='out';transition.timer=0;transition.next=zoneId;
+  enteredFromZone=currentZoneId; // always track where we came from
+}
+
+function loadZone(id){
+  buildZoneMap(id);
+  rebuildMinimap();
+  spawnZoneMonsters(id);
+  particles.length=0;
+  if(id!=='town'&&id!=='map')zonesVisited.add(id);
+  const z=CAMPAIGN_BY_ID[id];
+  zoneDropTier=z?.dt||1;
+  if(id==='town'){
+    // Return near the gate for the act we just came from
+    const fromAct=getZoneAct(enteredFromZone)||1;
+    const pos=ACT_TOWN_RETURN[fromAct]||TOWN_SPAWN;
+    player.wx=pos.wx;player.wy=pos.wy;
+  } else if(z){
+    const prev=campaignPrev(id);
+    const comingFromPrev=(enteredFromZone===prev)||(z.seq===1); // first zone or coming forward
+    if(z.biome==='beach'){
+      // East-west map: enter west from prev, enter east if backtracking
+      if(comingFromPrev){player.wx=BEACH_SPAWN.wx;player.wy=BEACH_SPAWN.wy;}
+      else{player.wx=58*TS+TS/2;player.wy=31*TS+TS/2;}
+    } else {
+      // North-south map: enter north from prev, enter south if backtracking
+      if(comingFromPrev){player.wx=32*TS+TS/2;player.wy=8*TS;}
+      else{player.wx=32*TS+TS/2;player.wy=57*TS;}
+    }
+  } else {
+    player.wx=32*TS+TS/2;player.wy=8*TS;
+  }
+  updateCamera();
+  currentZoneId=id;
+  const cfg=ZONE_CFG[id];
+  document.body.style.background=cfg.bg;
+  const actNum=getZoneAct(id);
+  const actLabel=actNum?` — Act ${actNum}`:'';
+  zoneAnnounce={name:cfg.name+actLabel,color:cfg.color,timer:190};
+  updateQuests();
+}
+
+function updateTransition(){
+  if(transition.phase==='none')return;
+  transition.timer++;
+  if(transition.phase==='out'&&transition.timer>=35){
+    loadZone(transition.next);
+    transition.phase='in';transition.timer=0;
+  }
+  if(transition.phase==='in'&&transition.timer>=35){
+    transition.phase='none';
+  }
+}
+
+// ── Zone detection (for zone toast) ───────────────────────────────────────
+const ZONES=[
+  {name:'Town Square',   check:(c,r)=>r>=23&&r<39&&c>=23&&c<39},
+  {name:'Tower Grounds', check:(c,r)=>r>=5&&r<22&&c>=25&&c<37},
+  {name:'Market',        check:(c,r)=>r>=18&&r<28&&c>=6&&c<23},
+  {name:'Garden',        check:(c,r)=>r>=5&&r<28&&c>=37&&c<60},
+  {name:'Residential',   check:(c,r)=>r>=35&&r<58&&c>=5&&c<27},
+  {name:'Meadows',       check:(c,r)=>r>=35&&r<58&&c>=37&&c<60},
+];
+let currentSubZone='Wilderness',zoneToast={name:'',timer:0};
+function updateSubZone(){
+  if(currentZoneId!=='town')return;
+  const c=Math.floor(player.wx/TS),r=Math.floor(player.wy/TS);
+  const z=ZONES.find(z=>z.check(c,r));
+  const name=z?z.name:'Wilderness';
+  if(name!==currentSubZone){currentSubZone=name;zoneToast={name,timer:160};}
+  if(zoneToast.timer>0)zoneToast.timer--;
+}
+
+// ── Input ──────────────────────────────────────────────────────────────────
+const keys={};
+let mouseX=0,mouseY=0;
+let skillTreeOpen=false,inventoryOpen=false,shopOpen=false,questOpen=false;
+let died=false,levelUpTimer=0;
+let attackFlash={active:false,wx:0,wy:0,timer:0};
+let invSlotRects=[],bagItemRects=[],shopItemRects=[],questClaimRects=[];
+
+window.addEventListener('keydown',e=>{
+  keys[e.key]=true;
+  if(wakeState==='sleeping'){wakeState='waking';wakeTimer=0;return;}
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.key))e.preventDefault();
+  if(e.key==='Tab'){
+    skillTreeOpen=!skillTreeOpen;inventoryOpen=shopOpen=questOpen=mapOpen=false;
+    if(skillTreeOpen){const sn=stNodes.find(n=>n.id===START_NODE[playerElement]);if(sn){stView.x=sn.x;stView.y=sn.y;stView.zoom=0.75;}}
+  }
+  if(e.key==='i'||e.key==='I'){inventoryOpen=!inventoryOpen;skillTreeOpen=shopOpen=questOpen=mapOpen=false;if(!inventoryOpen){invSelectedSlot=null;currencyMode={active:false,currId:null};}}
+  if(e.key==='q'||e.key==='Q'){questOpen=!questOpen;inventoryOpen=skillTreeOpen=shopOpen=mapOpen=false;}
+  if(e.key==='m'||e.key==='M'){mapOpen=!mapOpen;inventoryOpen=skillTreeOpen=shopOpen=questOpen=false;mapFragRects=[];}
+  if(e.key===' '||e.key==='1'||e.key==='2'||e.key==='3'){
+    if(!died&&wakeState==='playing'&&!skillTreeOpen&&!inventoryOpen&&!shopOpen&&!questOpen&&!mapOpen){
+      const gems=getSocketedGems().filter(g=>SKILL_GEMS[g.gemId]);
+      const slotIdx=e.key==='1'?0:e.key==='2'?1:e.key==='3'?2:0;
+      if(gems[slotIdx])useSkillGem(gems[slotIdx].gemId);
+      else if(e.key===' '&&gems[0])useSkillGem(gems[0].gemId);
+    }
+    if(e.key===' ')e.preventDefault();
+  }
+  if(e.key==='e'||e.key==='E'&&currentZoneId==='town'){
+    if(!died){
+      const nb=NPCS.find(n=>{const dx=n.wx-player.wx,dy=n.wy-player.wy;return dx*dx+dy*dy<48*48;});
+      if(nb){
+        if(nb.interact==='shop'){shopOpen=!shopOpen;inventoryOpen=skillTreeOpen=questOpen=false;}
+        else{questOpen=!questOpen;shopOpen=inventoryOpen=skillTreeOpen=false;}
+      }
+    }
+  }
+  if(e.key==='Escape'){
+    if(currencyMode.active){currencyMode={active:false,currId:null};invSelectedSlot=null;}
+    else if(skillTreeOpen)skillTreeOpen=false;
+    else if(inventoryOpen){inventoryOpen=false;invSelectedSlot=null;}
+    else if(shopOpen)shopOpen=false;
+    else if(questOpen)questOpen=false;
+    else if(mapOpen)mapOpen=false;
+    else location.href='index.html';
+  }
+  if((e.key==='r'||e.key==='R')&&died)respawn();
+});
+window.addEventListener('keyup',e=>{delete keys[e.key];});
+canvas.addEventListener('mousemove',e=>{
+  const r=canvas.getBoundingClientRect();mouseX=e.clientX-r.left;mouseY=e.clientY-r.top;
+  if(skillTreeOpen&&stView.drag){
+    const dx=e.clientX-stView.lx,dy=e.clientY-stView.ly;
+    if(Math.abs(dx)>2||Math.abs(dy)>2)stView.moved=true;
+    stView.x-=dx/stView.zoom;stView.y-=dy/stView.zoom;
+    stView.lx=e.clientX;stView.ly=e.clientY;
+  }
+});
+canvas.addEventListener('mousedown',e=>{if(skillTreeOpen){stView.drag=true;stView.moved=false;stView.lx=e.clientX;stView.ly=e.clientY;}});
+canvas.addEventListener('mouseup',()=>{stView.drag=false;});
+canvas.addEventListener('wheel',e=>{
+  if(!skillTreeOpen)return;e.preventDefault();
+  const r=canvas.getBoundingClientRect();const mx=e.clientX-r.left,my=e.clientY-r.top;
+  const factor=e.deltaY<0?1.12:0.89;
+  const newZoom=Math.max(0.22,Math.min(2.2,stView.zoom*factor));
+  const vx=stView.x+(mx-VW/2)/stView.zoom,vy=stView.y+(my-VH/2)/stView.zoom;
+  stView.zoom=newZoom;stView.x=vx-(mx-VW/2)/newZoom;stView.y=vy-(my-VH/2)/newZoom;
+},{passive:false});
+canvas.addEventListener('click',e=>{
+  const r=canvas.getBoundingClientRect();const mx=e.clientX-r.left,my=e.clientY-r.top;
+  if(shopOpen){handleShopClick(mx,my);return;}
+  if(inventoryOpen){handleInvClick(mx,my);return;}
+  if(questOpen){handleQuestClick(mx,my);return;}
+  if(mapOpen){handleMapClick(mx,my);return;}
+  if(skillTreeOpen){if(!stView.moved&&player.skillPoints>0)handleSTClick(mx,my);stView.moved=false;return;}
+});
+
+function handleShopClick(mx,my){
+  shopItemRects.forEach(({id,x,y,w,h})=>{
+    if(mx>=x&&mx<x+w&&my>=y&&my<y+h){
+      const it=ITEMS[id];
+      if(it&&player.gold>=it.cost){player.gold-=it.cost;player.inventory.bag.push(id);}
+    }
+  });
+}
+let invGemSocketRects=[]; // {x,y,w,h,slotKey,socketIdx}
+let invUnlockSlotRects=[]; // {x,y,w,h,slotKey}
+function handleInvClick(mx,my){
+  // Currency mode: click an RNG item to apply currency
+  if(currencyMode.active){
+    for(const{x,y,w,h,index}of bagItemRects){
+      if(mx>=x&&mx<x+w&&my>=y&&my<y+h){
+        const target=player.inventory.bag[index];
+        if(applyCurrency(currencyMode.currId,target)){
+          const ci=player.inventory.bag.findIndex(x2=>x2===currencyMode.currId);
+          if(ci>=0)player.inventory.bag.splice(ci,1);
+        }
+        currencyMode={active:false,currId:null};return;
+      }
+    }
+    for(const{x,y,w,h,slot}of invSlotRects){
+      if(mx>=x&&mx<x+w&&my>=y&&my<y+h){
+        const target=player.inventory[slot];
+        if(applyCurrency(currencyMode.currId,target)){
+          const ci=player.inventory.bag.findIndex(x2=>x2===currencyMode.currId);
+          if(ci>=0)player.inventory.bag.splice(ci,1);
+        }
+        currencyMode={active:false,currId:null};return;
+      }
+    }
+    currencyMode={active:false,currId:null};return;
+  }
+  // Gem socket click: socket a gem from bag into selected slot
+  for(const{x,y,w,h,slotKey,socketIdx}of invGemSocketRects){
+    if(mx>=x&&mx<x+w&&my>=y&&my<y+h){
+      const it=getItemDat(player.inventory[slotKey]);if(!it)return;
+      const existing=it.gems[socketIdx];
+      if(existing){
+        player.inventory.bag.push(existing);it.gems[socketIdx]=null;invSelectedSlot=slotKey;return;
+      }
+      if(invSelectedSlot&&invSelectedSlot!==slotKey){
+        // Try to socket whatever is selected in bag
+      }
+      invSelectedSlot=slotKey;return;
+    }
+  }
+  // Unlock gem slot button
+  for(const{x,y,w,h,slotKey}of invUnlockSlotRects){
+    if(mx>=x&&mx<x+w&&my>=y&&my<y+h){unlockGemSlot(slotKey);return;}
+  }
+  // Bag click
+  for(const{x,y,w,h,index}of bagItemRects){
+    if(mx>=x&&mx<x+w&&my>=y&&my<y+h){
+      const item=player.inventory.bag[index];
+      const it=getItemDat(item);if(!it)return;
+      if(it.type==='currency'){currencyMode={active:true,currId:item};invSelectedSlot=null;return;}
+      if((it.type==='skill_gem'||it.type==='support_gem')&&invSelectedSlot){
+        // Socket into selected slot
+        const slotIt=getItemDat(player.inventory[invSelectedSlot]);
+        if(slotIt&&slotIt.gems){
+          const emptyIdx=slotIt.gems.indexOf(null);
+          if(emptyIdx>=0){
+            slotIt.gems[emptyIdx]=it.gemId;
+            player.inventory.bag.splice(index,1);
+          }
+        }
+        invSelectedSlot=null;return;
+      }
+      if(it.type==='map'){return;} // maps opened via M
+      equipItem(item);return;
+    }
+  }
+  // Equipment slot click (select for gem socketing or unequip)
+  for(const{x,y,w,h,slot}of invSlotRects){
+    if(mx>=x&&mx<x+w&&my>=y&&my<y+h){
+      if(invSelectedSlot===slot){invSelectedSlot=null;}
+      else{invSelectedSlot=slot;}
+      return;
+    }
+  }
+}
+function handleQuestClick(mx,my){questClaimRects.forEach(({x,y,w,h,idx})=>{if(mx>=x&&mx<x+w&&my>=y&&my<y+h)claimQuest(idx);});}
+function handleMapClick(mx,my){
+  mapFragRects.forEach(({x,y,w,h,tier})=>{if(mx>=x&&mx<x+w&&my>=y&&my<y+h)enterMap(tier);});
+}
+function handleSTClick(mx,my){
+  const {vx,vy}=stStoV(mx,my);
+  const TIER_HIT=[10,16,24];
+  stNodes.forEach(n=>{
+    if(!n.available)return;
+    const r=TIER_HIT[n.tier]||10;
+    const dx=vx-n.x,dy=vy-n.y;
+    if(dx*dx+dy*dy<r*r){
+      n.unlocked=true;player.stats[n.stat]+=n.val;
+      if(n.stat==='hp'){player.maxHp+=n.val;player.hp=Math.min(player.hp+n.val,getMaxHp());}
+      player.skillPoints--;refreshAvailability();
+    }
+  });
+}
+
+// ── Kill monster ───────────────────────────────────────────────────────────
+function killMonster(m){
+  if(m.dying)return;
+  m.dying=true;m.deathTimer=30;
+  player.xp+=m.xpReward;player.gold+=m.goldReward;
+  if(m.type<killCounts.length)killCounts[m.type]++;
+  updateQuests();checkLevelUp();
+  if(m.type===5&&currentZoneId!=='map'){
+    zoneAnnounce={name:'Guardian Defeated!',color:'#ffe040',timer:200};
+  }
+  const mt=MTYPE[m.type];
+  if(mt.isActBoss){
+    actBossDefeated[mt.actNum-1]=true;
+    const nextAct=mt.actNum+1;
+    let msg=nextAct<=4?`Act ${nextAct} Unlocked!`:'';
+    if(mt.actNum===4){
+      // Act 4 cleared → the interlude opens; Maps begin.
+      player.ascended=true;
+      msg='The Interlude opens — Map Portal active in Town!';
+    }
+    zoneAnnounce={name:`${mt.name} Defeated! ${msg}`,color:'#ffe040',timer:340};
+    updateQuests();
+  }
+  if(currentZoneId==='map'){
+    const alive=monsters.filter(x=>!x.dying&&x.state!=='dead');
+    if(!alive.length&&!mapCompleteDone){
+      mapCompleteDone=true;
+      const md=MAP_DEFS[(player.mapTier||1)-1];
+      player.gold+=md.reward.gold;player.xp+=md.reward.xp;checkLevelUp();
+      zoneAnnounce={name:`Map T${player.mapTier} Complete! +${md.reward.gold}g +${md.reward.xp}xp`,color:'#ffdd44',timer:280};
+    }
+  }
+  if(mt.drops)mt.drops.forEach(d=>{
+    if(Math.random()>=d.ch)return;
+    if(d.baseType){
+      const ri=generateEquip(d.baseType,d.elem?playerElement:null,d.rar||null);
+      if(ri)groundDrops.push({wx:m.wx+(Math.random()*28-14),wy:m.wy+(Math.random()*28-14),item:ri,timer:700});
+    }else if(d.id){
+      groundDrops.push({wx:m.wx+(Math.random()*28-14),wy:m.wy+(Math.random()*28-14),id:d.id,timer:700});
+    }
+  });
+  // Currency drops (small chance)
+  if(Math.random()<0.04)groundDrops.push({wx:m.wx,wy:m.wy,id:'orb_of_mage',timer:700});
+  if(Math.random()<0.008)groundDrops.push({wx:m.wx,wy:m.wy,id:'control_orb',timer:700});
+  // Map fragment drops (ascended only)
+  if(player.ascended&&Math.random()<0.09){
+    const t=Math.min(20,Math.max(1,Math.ceil(player.level/5)+Math.floor(Math.random()*3)-1));
+    const mapId=t>=20?'map_t20':t>=15?'map_t15':t>=10?'map_t10':t>=5?'map_t5':'map_t1';
+    groundDrops.push({wx:m.wx,wy:m.wy+18,id:mapId,timer:700});
+  }
+}
+
+// ── Skill gems ─────────────────────────────────────────────────────────────
+function getSocketedGems(){
+  // Returns [{gemId, slotKey, socketIdx}] for all socketed gems across all equipped items
+  const out=[];
+  ['chestplate','wand1','wand2'].forEach(slotKey=>{
+    const it=getItemDat(player.inventory[slotKey]);
+    if(!it||!it.gems)return;
+    it.gems.forEach((g,i)=>{if(g)out.push({gemId:g,slotKey,socketIdx:i});});
+  });
+  return out;
+}
+function getGemMods(gemId){
+  // Look for support gems in the same socket group as gemId
+  let dmg=1,cd=1,chain=0;
+  ['chestplate','wand1','wand2'].forEach(slotKey=>{
+    const it=getItemDat(player.inventory[slotKey]);
+    if(!it||!it.gems)return;
+    const mi=it.gems.indexOf(gemId);if(mi<0)return;
+    it.gems.forEach((g,i)=>{
+      if(i!==mi&&g&&SUPPORT_MODS[g]){
+        const mod=SUPPORT_MODS[g];
+        if(mod.dmg)dmg*=mod.dmg;if(mod.cd)cd*=mod.cd;if(mod.chain)chain+=mod.chain;
+      }
+    });
+  });
+  return{dmg,cd,chain};
+}
+function getSlotGemCount(slotKey){
+  // Returns max total gem slots that can be unlocked at current level (regardless of item's current gemSlots)
+  const it=getItemDat(player.inventory[slotKey]);
+  if(!it||!it.gemSlots)return 0;
+  if(player.level>=50)return 5;
+  if(player.level>=40)return 4;
+  if(player.level>=25)return 3;
+  return 2; // base: 1 existing + 1 unlockable for free-ish
+}
+function unlockGemSlot(slotKey){
+  const it=getItemDat(player.inventory[slotKey]);
+  if(!it||!it.gemSlots)return;
+  const maxSlots=getSlotGemCount(slotKey);
+  if(it.gemSlots>=maxSlots){zoneAnnounce={name:'Max slots for your level',color:'#888',timer:120};return;}
+  const nextSlot=it.gemSlots+1;
+  const cost=200*nextSlot;
+  if(player.gold<cost){zoneAnnounce={name:`Need ${cost}g to unlock slot ${nextSlot}`,color:'#ff8080',timer:150};return;}
+  player.gold-=cost;it.gemSlots=nextSlot;
+  if(!it.gems)it.gems=[];
+  while(it.gems.length<it.gemSlots)it.gems.push(null);
+  zoneAnnounce={name:`Gem slot ${nextSlot} unlocked! (-${cost}g)`,color:'#ffe080',timer:160};
+}
+function useSkillGem(gemId){
+  if(!SKILL_GEMS[gemId])return;
+  if((player.gemCooldowns[gemId]||0)>0)return;
+  const mods=getGemMods(gemId);
+  const baseDmg=Math.round(getGemBaseDmg(gemId)*mods.dmg);
+  const cd=Math.round(SKILL_GEMS[gemId].cooldown*mods.cd);
+  player.gemCooldowns[gemId]=cd;
+  spawnBurst(player.wx,player.wy,SKILL_GEMS[gemId].color,8);
+
+  if(gemId==='meteor_storm'){
+    for(let i=0;i<5+mods.chain;i++){
+      const tx=player.wx+(Math.random()-0.5)*320;
+      const ty=player.wy+(Math.random()-0.5)*240;
+      projectiles.push({type:'meteor',wx:tx+(Math.random()-0.5)*60,wy:ty-280-i*45,tx,ty,
+        life:55+i*5,maxLife:55+i*5,dmg:baseDmg,r:16,hit:false});
+    }
+  }else if(gemId==='ice_lance'){
+    let tx=player.wx,ty=player.wy;
+    let best=null,bestD2=320*320;
+    monsters.forEach(m=>{if(m.dying||m.state==='dead')return;const d2=(m.wx-player.wx)**2+(m.wy-player.wy)**2;if(d2<bestD2){bestD2=d2;best=m;}});
+    if(best){tx=best.wx;ty=best.wy;}
+    else{const ang={up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[player.facing];tx=player.wx+Math.cos(ang)*300;ty=player.wy+Math.sin(ang)*300;}
+    const dx2=tx-player.wx,dy2=ty-player.wy,len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+    for(let c=0;c<=mods.chain;c++){
+      projectiles.push({type:'ice_lance',wx:player.wx,wy:player.wy,vx:dx2/len*9,vy:dy2/len*9,
+        life:55,maxLife:55,dmg:baseDmg,r:6,hit:false});
+    }
+  }else if(gemId==='thunder_bolt'){
+    let best=null,bestD2=420*420;
+    monsters.forEach(m=>{if(m.dying||m.state==='dead')return;const d2=(m.wx-player.wx)**2+(m.wy-player.wy)**2;if(d2<bestD2){bestD2=d2;best=m;}});
+    if(best){
+      best.hp-=baseDmg;if(best.hp<=0&&!best.dying)killMonster(best);
+      projectiles.push({type:'thunder',wx:player.wx,wy:player.wy,tx:best.wx,ty:best.wy,life:18,maxLife:18});
+      // Chain
+      if(mods.chain>0){
+        let src=best;
+        for(let c=0;c<mods.chain;c++){
+          let next=null,nd2=180*180;
+          monsters.forEach(m2=>{if(m2===src||m2.dying||m2.state==='dead')return;const d2=(m2.wx-src.wx)**2+(m2.wy-src.wy)**2;if(d2<nd2){nd2=d2;next=m2;}});
+          if(!next)break;
+          next.hp-=baseDmg*0.7;if(next.hp<=0&&!next.dying)killMonster(next);
+          projectiles.push({type:'thunder',wx:src.wx,wy:src.wy,tx:next.wx,ty:next.wy,life:18,maxLife:18});
+          src=next;
+        }
+      }
+    }
+  }else if(gemId==='tidal_wave'){
+    projectiles.push({type:'wave',wx:player.wx,wy:player.wy,r:30,maxR:260+mods.chain*70,
+      life:42,maxLife:42,dmg:baseDmg,hit:new Set(),color:'#70c1f2'});
+  }else if(gemId==='flame_nova'){
+    projectiles.push({type:'wave',wx:player.wx,wy:player.wy,r:20,maxR:180+mods.chain*50,
+      life:28,maxLife:28,dmg:Math.round(baseDmg*1.4),hit:new Set(),color:'#ff4400'});
+  }else if(gemId==='aqua_bolt'){
+    const ang={up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[player.facing];
+    for(let c2=0;c2<3+mods.chain;c2++){
+      const a=ang+(c2-1)*0.28;
+      projectiles.push({type:'ice_lance',wx:player.wx,wy:player.wy,
+        vx:Math.cos(a)*10,vy:Math.sin(a)*10,
+        life:55,maxLife:55,dmg:Math.round(baseDmg*0.75),r:5,hit:false,color:'#4488ff'});
+    }
+  }else if(gemId==='lightning_storm'){
+    for(let i=0;i<5+mods.chain;i++){
+      const tx=player.wx+(Math.random()-0.5)*400,ty=player.wy+(Math.random()-0.5)*300;
+      projectiles.push({type:'thunder',wx:player.wx,wy:player.wy,tx,ty,
+        life:14+i*3,maxLife:14+i*3});
+      monsters.forEach(m=>{if(m.dying||m.state==='dead')return;
+        if((m.wx-tx)**2+(m.wy-ty)**2<44*44){m.hp-=baseDmg;if(m.hp<=0&&!m.dying)killMonster(m);}});
+      spawnBurst(tx,ty,'#ffffaa',7);
+    }
+  }else if(gemId==='frost_nova'){
+    const range=130+mods.chain*40;
+    monsters.forEach(m=>{if(m.dying||m.state==='dead')return;
+      if((m.wx-player.wx)**2+(m.wy-player.wy)**2<range*range){
+        m.hp-=Math.round(baseDmg*1.6);if(m.hp<=0&&!m.dying)killMonster(m);
+        spawnBurst(m.wx,m.wy,'#aaeeff',8);
+      }});
+    projectiles.push({type:'wave',wx:player.wx,wy:player.wy,r:5,maxR:range,
+      life:14,maxLife:14,dmg:0,hit:new Set(),color:'#aaeeff'});
+  }else if(gemId==='void_orb'){
+    projectiles.push({type:'void_orb',wx:player.wx,wy:player.wy,vx:0,vy:0,
+      life:240,maxLife:240,dmg:Math.round(baseDmg*2.8),r:10,hit:false});
+  }else if(gemId==='blizzard'){
+    for(let i=0;i<7+mods.chain;i++){
+      const a=Math.random()*Math.PI*2,d=20+Math.random()*240;
+      const tx=player.wx+Math.cos(a)*d,ty=player.wy+Math.sin(a)*d;
+      projectiles.push({type:'meteor',wx:tx+(Math.random()-0.5)*24,wy:ty-160-i*15,
+        tx,ty,life:32+i*3,maxLife:32+i*3,dmg:Math.round(baseDmg*0.6),r:9,hit:false,isIce:true});
+    }
+  }
+}
+function updateProjectiles(){
+  for(let i=projectiles.length-1;i>=0;i--){
+    const p=projectiles[i];p.life--;
+    if(p.type==='meteor'){
+      if(!p.hit){
+        const dx2=p.tx-p.wx,dy2=p.ty-p.wy,d=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+        p.wx+=dx2/d*12;p.wy+=dy2/d*12;
+        if(d<14){
+          p.hit=true;spawnBurst(p.wx,p.wy,p.isIce?'#88ccff':'#ff6600',14);
+          const aoe=p.isIce?28:38;
+          monsters.forEach(m=>{if(m.dying||m.state==='dead')return;
+            if((m.wx-p.wx)**2+(m.wy-p.wy)**2<aoe*aoe){m.hp-=p.dmg;if(m.hp<=0&&!m.dying)killMonster(m);}});
+        }
+      }
+    }else if(p.type==='ice_lance'){
+      p.wx+=p.vx;p.wy+=p.vy;
+      if(!p.hit){
+        for(const m of monsters){
+          if(m.dying||m.state==='dead')continue;
+          if((m.wx-p.wx)**2+(m.wy-p.wy)**2<(m.r+p.r)**2){
+            m.hp-=p.dmg;if(m.hp<=0&&!m.dying)killMonster(m);p.hit=true;p.life=0;break;
+          }
+        }
+      }
+    }else if(p.type==='wave'){
+      p.r+=(p.maxR-30)/p.maxLife*2.2;
+      if(p.dmg>0)monsters.forEach(m=>{if(m.dying||m.state==='dead'||p.hit.has(m))return;
+        if((m.wx-p.wx)**2+(m.wy-p.wy)**2<p.r*p.r){m.hp-=p.dmg;if(m.hp<=0&&!m.dying)killMonster(m);p.hit.add(m);}});
+    }else if(p.type==='void_orb'){
+      let best=null,bestD2=600*600;
+      monsters.forEach(m=>{if(m.dying||m.state==='dead')return;
+        const d2=(m.wx-p.wx)**2+(m.wy-p.wy)**2;if(d2<bestD2){bestD2=d2;best=m;}});
+      if(best){const d=Math.sqrt(bestD2)||1;p.vx=p.vx*0.88+(best.wx-p.wx)/d*5*0.12;p.vy=p.vy*0.88+(best.wy-p.wy)/d*5*0.12;}
+      else{p.vx*=0.94;p.vy*=0.94;}
+      p.wx+=p.vx;p.wy+=p.vy;
+      if(!p.hit){for(const m of monsters){if(m.dying||m.state==='dead')continue;
+        if((m.wx-p.wx)**2+(m.wy-p.wy)**2<(m.r+p.r)**2){
+          m.hp-=p.dmg;if(m.hp<=0&&!m.dying)killMonster(m);p.hit=true;p.life=0;
+          spawnBurst(p.wx,p.wy,'#8800ff',16);break;}}}
+    }
+    if(p.life<=0||(p.type!=='wave'&&p.type!=='void_orb'&&p.hit===true))projectiles.splice(i,1);
+    else if(p.type==='void_orb'&&p.hit)projectiles.splice(i,1);
+  }
+  Object.keys(player.gemCooldowns).forEach(k=>{if(player.gemCooldowns[k]>0)player.gemCooldowns[k]--;});
+}
+
+// ── Currency use ───────────────────────────────────────────────────────────
+function applyCurrency(currId,targetItem){
+  if(typeof targetItem!=='object')return false;
+  if(currId==='orb_of_mage'){
+    const rerolled=generateEquip(targetItem.baseType,null,targetItem.rarity);
+    if(!rerolled)return false;
+    rerolled.gems=targetItem.gems;rerolled.gemSlots=targetItem.gemSlots;rerolled._id=targetItem._id;
+    Object.assign(targetItem,rerolled);
+    zoneAnnounce={name:'Stats rerolled!',color:'#aabbff',timer:120};return true;
+  }else if(currId==='control_orb'){
+    if(Math.random()<0.01){
+      const copy=JSON.parse(JSON.stringify(targetItem));copy._id='rng'+(++_rngSeq);
+      player.inventory.bag.push(copy);
+      zoneAnnounce={name:'Item copied!',color:'#ffffaa',timer:180};
+    }else{
+      zoneAnnounce={name:'Control Orb: no luck...',color:'#888888',timer:130};
+    }
+    return true;
+  }
+  return false;
+}
+
+// ── Map zone ───────────────────────────────────────────────────────────────
+function buildMapZone(tier){
+  clearMap(T.LAVA_ROCK);
+  const base=tier>10?T.SPARK_GROUND:tier>5?T.LAVA_ROCK:T.GRASS;
+  for(let r=3;r<61;r++)for(let c=3;c<61;c++){
+    if(Math.max(Math.abs(c-32),Math.abs(r-32))<27)map[r][c]=base;
+  }
+  // Arena floor
+  for(let r=18;r<46;r++)for(let c=18;c<46;c++)map[r][c]=T.COBBLE;
+  // Obstacles (only for higher tiers)
+  if(tier>5){
+    [[24,24],[40,24],[24,40],[40,40],[32,22],[32,42],[22,32],[42,32]].forEach(([cx,cr])=>{
+      for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)
+        if(map[cr+dr]&&map[cr+dr][cx+dc]!==undefined)map[cr+dr][cx+dc]=T.ROCK;
+    });
+  }
+  // Clear center for player spawn
+  for(let r=29;r<35;r++)for(let c=29;c<35;c++)map[r][c]=T.COBBLE;
+}
+function spawnMapMonsters(tier){
+  const md=MAP_DEFS[Math.min(19,tier-1)];
+  const sc=md.monsterScale;
+  for(let i=0;i<md.monsterCount;i++){
+    let placed=false,tries=0;
+    while(!placed&&tries<400){
+      tries++;
+      const c=19+Math.floor(Math.random()*24),r=19+Math.floor(Math.random()*24);
+      if(walkable(c*TS+TS/2,r*TS+TS/2)&&(Math.abs(c-32)>5||Math.abs(r-32)>5)){
+        const t=Math.floor(Math.random()*5);const mt=MTYPE[t];
+        const m=mkMonster(t,c*TS+TS/2,r*TS+TS/2);
+        m.hp=Math.round(mt.hp*sc);m.maxHp=m.hp;m.atk=Math.round(mt.atk*sc);
+        m.xpReward=Math.round(mt.xp*sc);m.goldReward=Math.round(mt.gold*sc);
+        monsters.push(m);placed=true;
+      }
+    }
+  }
+  // Boss - placed in top arena, not center
+  const bsc=md.bossScale;const mt=MTYPE[5];
+  const boss=mkMonster(5,32*TS+TS/2,22*TS+TS/2);
+  boss.hp=Math.round(mt.hp*bsc);boss.maxHp=boss.hp;boss.atk=Math.round(mt.atk*bsc);
+  boss.xpReward=Math.round(mt.xp*bsc);boss.goldReward=Math.round(mt.gold*bsc);
+  monsters.push(boss);
+}
+function enterMap(tier){
+  if(!player.ascended){zoneAnnounce={name:'Reach level 50 to Ascend!',color:'#ff6060',timer:180};return;}
+  const mapId=tier>=20?'map_t20':tier>=15?'map_t15':tier>=10?'map_t10':tier>=5?'map_t5':'map_t1';
+  const idx=player.inventory.bag.findIndex(x=>x===mapId);
+  if(idx<0){zoneAnnounce={name:'No map fragment!',color:'#ff6060',timer:180};return;}
+  player.inventory.bag.splice(idx,1);
+  player.mapTier=tier;mapCompleteDone=false;mapOpen=false;
+  buildMapZone(tier);rebuildMinimap();monsters.length=0;
+  spawnMapMonsters(tier);particles.length=0;
+  player.wx=32*TS+TS/2;player.wy=32*TS+TS/2;updateCamera();
+  currentZoneId='map';document.body.style.background=ZONE_CFG.map.bg;
+  zoneAnnounce={name:`Map Tier ${tier} — Clear all enemies!`,color:'#ffdd44',timer:220};
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function tileAt(wx,wy){const c=Math.floor(wx/TS),r=Math.floor(wy/TS);if(c<0||c>=MW||r<0||r>=MH)return T.ROCK;return map[r][c];}
+function walkable(wx,wy){return TILE_DEF[tileAt(wx,wy)].w;}
+function canMove(cx,cy,hw,hh){return walkable(cx-hw,cy-hh)&&walkable(cx+hw,cy-hh)&&walkable(cx-hw,cy+hh)&&walkable(cx+hw,cy+hh);}
+function roundRect(c2,x,y,w,h,r){
+  c2.beginPath();c2.moveTo(x+r,y);c2.lineTo(x+w-r,y);c2.arcTo(x+w,y,x+w,y+r,r);
+  c2.lineTo(x+w,y+h-r);c2.arcTo(x+w,y+h,x+w-r,y+h,r);c2.lineTo(x+r,y+h);c2.arcTo(x,y+h,x,y+h-r,r);c2.lineTo(x,y+r);c2.arcTo(x,y,x+r,y,r);c2.closePath();
+}
+
+// ── Game state ─────────────────────────────────────────────────────────────
+function checkLevelUp(){
+  while(player.xp>=player.xpToNext&&player.level<100){
+    player.level++;player.skillPoints++;player.xpToNext=Math.floor(player.xpToNext*1.5);
+    player.maxHp+=10;player.hp=getMaxHp();levelUpTimer=130;
+    if(player.level===50&&!player.ascended){
+      player.ascended=true;
+      zoneAnnounce={name:'ASCENDED! Maps unlocked — press M',color:'#ffdd44',timer:360};
+    }
+  }
+}
+function respawn(){
+  died=false;player.hp=getMaxHp();
+  if(currentZoneId!=='town'){startTransition('town');player.wx=TOWN_SPAWN.wx;player.wy=TOWN_SPAWN.wy;}
+  else{player.wx=TOWN_SPAWN.wx;player.wy=TOWN_SPAWN.wy;}
+}
+
+// ── Update player ──────────────────────────────────────────────────────────
+function updatePlayer(){
+  if(died||wakeState!=='playing'||skillTreeOpen||inventoryOpen||shopOpen||questOpen||transition.phase!=='none')return;
+  let dx=0,dy=0;const spd=getSpeed();
+  if(keys['w']||keys['W']||keys['ArrowUp'])   dy-=spd;
+  if(keys['s']||keys['S']||keys['ArrowDown']) dy+=spd;
+  if(keys['a']||keys['A']||keys['ArrowLeft']) dx-=spd;
+  if(keys['d']||keys['D']||keys['ArrowRight'])dx+=spd;
+  if(dx&&dy){dx*=0.707;dy*=0.707;}
+  if(dx>0)player.facing='right';else if(dx<0)player.facing='left';
+  else if(dy>0)player.facing='down';else if(dy<0)player.facing='up';
+  const{hw,hh}=player;
+  if(canMove(player.wx+dx,player.wy,hw,hh))player.wx=Math.max(hw,Math.min(WORLD_W-hw,player.wx+dx));
+  if(canMove(player.wx,player.wy+dy,hw,hh))player.wy=Math.max(hh,Math.min(WORLD_H-hh,player.wy+dy));
+
+  // Gate proximity check
+  const gates=getActiveGates();
+  for(const g of gates){
+    const dx2=player.wx-g.wx,dy2=player.wy-g.wy;
+    if(dx2*dx2+dy2*dy2<22*22){
+      if(g.locked){
+        if(g.bossLocked){
+          const z=CAMPAIGN_BY_ID[currentZoneId];
+          lockedMsgText=`Defeat ${MTYPE[z?.boss]?.name||'the boss'} to proceed`;
+        } else {
+          const actNames={1:'The Water, Failed to Take Shape',2:'Uncontrolled Fire',3:'The Iced Automaton'};
+          lockedMsgText=`Defeat ${actNames[g.actReq-1]||'the previous act boss'} to unlock Act ${g.actReq}`;
+        }
+        lockedMsgTimer=180;
+      } else if(g.isMapsPortal){mapOpen=true;break;}
+      else{startTransition(g.zone);break;}
+    }
+  }
+
+  // Ground drop pickup
+  for(let i=groundDrops.length-1;i>=0;i--){
+    const d=groundDrops[i];d.timer--;
+    if(d.timer<=0){groundDrops.splice(i,1);continue;}
+    const ddx=player.wx-d.wx,ddy=player.wy-d.wy;
+    if(ddx*ddx+ddy*ddy<22*22){
+      if(d.item)player.inventory.bag.push(d.item);
+      else if(d.id)player.inventory.bag.push(d.id);
+      groundDrops.splice(i,1);
+    }
+  }
+  if(lockedMsgTimer>0)lockedMsgTimer--;
+
+  if(attackFlash.timer>0)attackFlash.timer--;
+  player.attackTimer--;
+  if(player.stats.regen>0){regenTick++;if(regenTick>=60){regenTick=0;player.hp=Math.min(getMaxHp(),player.hp+player.stats.regen);}}
+  if(player.attackTimer<=0){
+    const atkRange=44+(player.stats.range||0);
+    let best=null,bestD2=atkRange*atkRange;
+    for(const m of monsters){
+      if(m.dying||m.state==='dead')continue;
+      const dx2=m.wx-player.wx,dy2=m.wy-player.wy,d2=dx2*dx2+dy2*dy2;
+      if(d2<bestD2){bestD2=d2;best=m;}
+    }
+    if(best){
+      let dmg=getAttack();
+      const eq=getEquipStats();
+      const totalCrit=(player.stats.critChance||0)+(eq.critChance||0);
+      if(totalCrit>0&&Math.random()*100<totalCrit){dmg*=2;spawnBurst(best.wx,best.wy,'#ffff60',10);}
+      best.hp-=dmg;player.attackTimer=45;
+      attackFlash={active:true,wx:best.wx,wy:best.wy,timer:7};
+      spawnBurst(best.wx,best.wy,PEL.orb);
+      if(best.hp<=0&&!best.dying)killMonster(best);
+    }else{player.attackTimer=18;}
+  }
+  for(const m of monsters){
+    if(m.dying||m.state==='dead')continue;
+    const dx2=m.wx-player.wx,dy2=m.wy-player.wy;
+    if(dx2*dx2+dy2*dy2<(m.r+14)*(m.r+14)){
+      m.attackTimer--;
+      if(m.attackTimer<=0){const totalDef=(player.stats.defense||0)+(getEquipStats().defense||0);const dmgIn=Math.max(1,m.atk-totalDef);player.hp-=dmgIn;m.attackTimer=90;spawnBurst(player.wx,player.wy,'rgba(255,60,60,0.9)',4);if(player.hp<=0){player.hp=0;died=true;}}
+    }
+  }
+}
+
+function updateMonsters(){
+  for(const m of monsters){
+    if(m.dying){m.deathTimer--;if(m.deathTimer<=0){m.dying=false;m.state='dead';m.respawnTimer=600;}continue;}
+    if(m.state==='dead'){m.respawnTimer--;if(m.respawnTimer<=0&&m.type!==5){m.hp=m.maxHp;m.wx=m.ox;m.wy=m.oy;m.state='wander';m.wanderTimer=60;m.attackTimer=60;}continue;}
+    const dx=player.wx-m.wx,dy=player.wy-m.wy,dist2=dx*dx+dy*dy;
+    if(dist2<80*80)m.state='chase';
+    if(dist2>140*140)m.state='wander';
+    if(m.state==='chase'){
+      const dist=Math.sqrt(dist2)||1,nx=m.wx+dx/dist*m.spd,ny=m.wy+dy/dist*m.spd;
+      if(canMove(nx,m.wy,m.r*0.7,m.r*0.7))m.wx=nx;else m.vx=-m.vx;
+      if(canMove(m.wx,ny,m.r*0.7,m.r*0.7))m.wy=ny;else m.vy=-m.vy;
+    }else{
+      m.wanderTimer--;
+      if(m.wanderTimer<=0){const a=Math.random()*Math.PI*2;m.vx=Math.cos(a)*m.spd*0.55;m.vy=Math.sin(a)*m.spd*0.55;m.wanderTimer=80+Math.random()*60|0;}
+      const nx=m.wx+m.vx,ny=m.wy+m.vy;
+      if(canMove(nx,m.wy,m.r*0.7,m.r*0.7))m.wx=nx;else m.vx=-m.vx;
+      if(canMove(m.wx,ny,m.r*0.7,m.r*0.7))m.wy=ny;else m.vy=-m.vy;
+    }
+    m.wx=Math.max(m.r,Math.min(WORLD_W-m.r,m.wx));m.wy=Math.max(m.r,Math.min(WORLD_H-m.r,m.wy));
+  }
+}
+
+// ── Render tiles ───────────────────────────────────────────────────────────
+const FLOWER_CLR=['#e84040','#f0d020','#cc44e0'];
+function renderTiles(){
+  const c0=Math.floor(camera.x/TS),c1=Math.min(MW,Math.ceil((camera.x+VW)/TS));
+  const r0=Math.floor(camera.y/TS),r1=Math.min(MH,Math.ceil((camera.y+VH)/TS));
+  for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++){
+    const tid=map[r][c],sx=c*TS-camera.x|0,sy=r*TS-camera.y|0;
+    ctx.fillStyle=TILE_DEF[tid].b;ctx.fillRect(sx,sy,TS+1,TS+1);
+    if(tid===T.WATER||tid===T.DEEP_WATER){
+      ctx.save();ctx.globalAlpha=0.12+0.09*Math.sin(frame*0.05+c*0.35+r*0.22);
+      ctx.fillStyle='#aaccff';ctx.fillRect(sx+3,sy+3,TS-6,TS-6);ctx.restore();
+    }else if(tid===T.TREE){
+      ctx.fillStyle='#0d3010';ctx.beginPath();ctx.arc(sx+TS/2,sy+TS/2,11,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#2a6030';ctx.beginPath();ctx.arc(sx+TS/2,sy+TS/2,7,0,Math.PI*2);ctx.fill();
+    }else if(tid===T.ROCK){
+      ctx.fillStyle='#3a3a3a';ctx.beginPath();ctx.arc(sx+TS/2,sy+TS/2,10,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#6a6a6a';ctx.beginPath();ctx.arc(sx+TS/2-2,sy+TS/2-2,5,0,Math.PI*2);ctx.fill();
+    }else if(tid===T.ICE_ROCK){
+      ctx.fillStyle='#1e3a48';ctx.beginPath();ctx.arc(sx+TS/2,sy+TS/2,10,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(150,230,255,0.55)';ctx.beginPath();ctx.arc(sx+TS/2-2,sy+TS/2-2,5,0,Math.PI*2);ctx.fill();
+    }else if(tid===T.LAVA_ROCK){
+      ctx.fillStyle='#2a1008';ctx.beginPath();ctx.arc(sx+TS/2,sy+TS/2,10,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=`rgba(255,70,0,${0.28+0.18*Math.sin(frame*0.09+c+r)})`;
+      ctx.beginPath();ctx.arc(sx+TS/2,sy+TS/2,5,0,Math.PI*2);ctx.fill();
+    }else if(tid>=T.FLOWER_R&&tid<=T.FLOWER_P){
+      const dr=2+Math.sin(frame*0.035+c+r)*0.6;
+      ctx.fillStyle=FLOWER_CLR[tid-T.FLOWER_R];ctx.beginPath();ctx.arc(sx+TS/2,sy+TS/2,dr,0,Math.PI*2);ctx.fill();
+    }else if(tid===T.SPARK_GROUND&&frame%3===0&&h1(c+(frame%7),r)<12){
+      ctx.fillStyle='rgba(230,220,255,0.9)';ctx.fillRect(sx+h2(c,r)%26,sy+h1(c,r)%26,2,2);
+    }else if(tid===T.COBBLE){
+      ctx.strokeStyle='rgba(0,0,0,0.18)';ctx.lineWidth=1;ctx.strokeRect(sx+2,sy+2,TS-4,TS-4);
+    }
+  }
+}
+
+// ── Render zone atmosphere ─────────────────────────────────────────────────
+function renderAtmosphere(){
+  const atm=ZONE_CFG[currentZoneId]?.atm;
+  if(atm){ctx.fillStyle=atm;ctx.fillRect(0,0,VW,VH);}
+}
+
+// ── Critical-path guide line ("map line") ──────────────────────────────────
+// Returns {points:[{wx,wy}...], color, label, target:{wx,wy}} or null.
+function getGuideWaypoints(){
+  // Boss zones: glowing trail from entry waypoints to the boss
+  const bd=ACT_BOSS_DATA[currentZoneId];
+  if(bd){
+    if(actBossDefeated[bd.act-1])return null; // boss slain — path complete
+    const pts=bd.path.map(([c,r])=>({wx:c*TS+TS/2,wy:r*TS+TS/2}));
+    const tgt={wx:bd.bx,wy:bd.by};pts.push(tgt);
+    return{points:pts,color:ZONE_CFG[currentZoneId].color,label:MTYPE[bd.mtype].name,target:tgt};
+  }
+  // Town: point to the next objective gate (next act's boss zone), else Map Portal
+  if(currentZoneId==='town'){
+    let targetZone=null;
+    if(!actBossDefeated[0])targetZone='beach';
+    else if(!actBossDefeated[1])targetZone='ember_depths';
+    else if(!actBossDefeated[2])targetZone='glacial_core';
+    else if(!actBossDefeated[3])targetZone='storm_summit';
+    let tgt,color,label;
+    if(targetZone){
+      const g=GATES.find(x=>x.zone===targetZone);if(!g)return null;
+      tgt={wx:g.wx,wy:g.wy};color=g.color;label='Next: '+g.label;
+    }else{
+      tgt={wx:MAPS_PORTAL.wx,wy:MAPS_PORTAL.wy};color=MAPS_PORTAL.color;label='Map Portal';
+    }
+    const center={wx:31*TS+TS/2,wy:31*TS+TS/2};
+    const mid={wx:(center.wx+tgt.wx)/2,wy:(center.wy+tgt.wy)/2};
+    return{points:[center,mid,tgt],color,label,target:tgt};
+  }
+  return null;
+}
+function renderGuidePath(){
+  if(wakeState!=='playing')return;
+  const g=getGuideWaypoints();if(!g)return;
+  const pts=g.points.map(p=>({x:p.wx-camera.x,y:p.wy-camera.y}));
+  // Animated glowing dashed polyline
+  ctx.save();
+  ctx.lineCap='round';ctx.lineJoin='round';
+  // soft outer glow
+  ctx.strokeStyle=g.color;ctx.globalAlpha=0.16;ctx.lineWidth=10;
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);ctx.stroke();
+  // dashed core, marching ants
+  ctx.globalAlpha=0.75;ctx.lineWidth=3;
+  ctx.setLineDash([14,12]);ctx.lineDashOffset=-(frame*0.6)%26;
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);ctx.stroke();
+  ctx.setLineDash([]);
+  // waypoint diamonds
+  ctx.globalAlpha=0.85;
+  for(let i=0;i<pts.length-1;i++){
+    const p=pts[i],pul=0.6+0.4*Math.sin(frame*0.08+i);
+    ctx.fillStyle=g.color;
+    ctx.beginPath();ctx.moveTo(p.x,p.y-4*pul);ctx.lineTo(p.x+4*pul,p.y);ctx.lineTo(p.x,p.y+4*pul);ctx.lineTo(p.x-4*pul,p.y);ctx.closePath();ctx.fill();
+  }
+  // target marker — pulsing ring + label
+  const t=pts[pts.length-1],pulse=0.5+0.5*Math.sin(frame*0.1);
+  ctx.globalAlpha=0.4+0.4*pulse;ctx.strokeStyle=g.color;ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.arc(t.x,t.y,14+pulse*6,0,Math.PI*2);ctx.stroke();
+  ctx.globalAlpha=0.9;ctx.fillStyle=g.color;
+  ctx.beginPath();ctx.arc(t.x,t.y,4,0,Math.PI*2);ctx.fill();
+  if(t.x>-60&&t.x<VW+60&&t.y>-60&&t.y<VH+60){
+    ctx.font='bold 10px Arial';ctx.textAlign='center';
+    const lw=ctx.measureText(g.label).width+10;
+    ctx.globalAlpha=0.8;ctx.fillStyle='rgba(0,0,0,0.7)';
+    roundRect(ctx,t.x-lw/2,t.y-38,lw,15,3);ctx.fill();
+    ctx.globalAlpha=1;ctx.fillStyle=g.color;ctx.fillText(g.label,t.x,t.y-27);ctx.textAlign='left';
+  }
+  ctx.restore();
+}
+
+// ── Render buildings (town only) ───────────────────────────────────────────
+function renderBuildings(){
+  if(currentZoneId!=='town')return;
+  [{wxt:19,wyt:19,ww:4,wh:4,wall:'#4a3020',roof:'#8a2800',label:'SHOP'},
+   {wxt:39,wyt:19,ww:4,wh:4,wall:'#203040',roof:'#1a3880',label:'GUILD'},
+   {wxt:28,wyt:6, ww:6,wh:10,wall:'#1a0a3a',roof:'#5010a0',label:'TOWER'},
+   {wxt:7, wyt:7, ww:3,wh:3,wall:'#3a3020',roof:'#6a4820',label:'INN'},
+   {wxt:7, wyt:37,ww:4,wh:3,wall:'#3a2a18',roof:'#5a3810',label:'ARMORY'},
+   {wxt:20,wyt:37,ww:3,wh:3,wall:'#2a2010',roof:'#4a3010',label:'SMITH'},
+   {wxt:40,wyt:37,ww:3,wh:3,wall:'#182830',roof:'#1a4a6a',label:'STABLE'},
+  ].forEach(b=>{
+    const sx=b.wxt*TS-camera.x,sy=b.wyt*TS-camera.y,sw=b.ww*TS,sh=b.wh*TS;
+    if(sx>VW+100||sx+sw<-100||sy>VH+100||sy+sh<-100)return;
+    ctx.fillStyle=b.wall;ctx.fillRect(sx,sy,sw,sh);
+    ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=2;ctx.strokeRect(sx,sy,sw,sh);
+    ctx.fillStyle=b.roof;
+    ctx.beginPath();ctx.moveTo(sx-4,sy);ctx.lineTo(sx+sw+4,sy);ctx.lineTo(sx+sw/2,sy-20);ctx.closePath();ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(sx+sw/2-8,sy+sh-22,16,22);
+    ctx.fillStyle='rgba(255,230,120,0.4)';ctx.fillRect(sx+8,sy+8,14,14);ctx.fillRect(sx+sw-22,sy+8,14,14);
+    ctx.fillStyle='#ffe0a0';ctx.font='bold 10px Arial';ctx.textAlign='center';ctx.fillText(b.label,sx+sw/2,sy-24);ctx.textAlign='left';
+  });
+}
+
+// ── Render gates ───────────────────────────────────────────────────────────
+function renderGates(){
+  const gates=getActiveGates();
+  gates.forEach(g=>{
+    const locked=g.locked||false;
+    const gcol=locked?'#555555':g.color;
+    const sx=g.wx-camera.x,sy=g.wy-camera.y;
+    if(sx<-80||sx>VW+80||sy<-80||sy>VH+80)return;
+    const off=20;
+    const[p1x,p1y]=g.vert?[sx,sy-off]:[sx-off,sy];
+    const[p2x,p2y]=g.vert?[sx,sy+off]:[sx+off,sy];
+    ctx.save();ctx.globalAlpha=0.5+0.25*Math.sin(frame*0.055+g.wx*0.001);
+    ctx.strokeStyle=gcol;ctx.lineWidth=8;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(p1x,p1y);ctx.lineTo(p2x,p2y);ctx.stroke();
+    ctx.restore();
+    [[p1x,p1y],[p2x,p2y]].forEach(([px,py])=>{
+      ctx.fillStyle='#504455';ctx.beginPath();ctx.arc(px,py,8,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle=gcol;ctx.lineWidth=2.5;ctx.stroke();
+    });
+    const lbl=locked?`🔒 Act ${g.actReq||''}`:g.label;
+    const pad=6,th=16;ctx.font='bold 10px Arial';ctx.textAlign='center';
+    const tw=ctx.measureText(lbl).width+pad*2;
+    const tx=sx-tw/2,ty=sy-(g.vert?off+th+6:th+12);
+    ctx.fillStyle='rgba(0,0,0,0.78)';roundRect(ctx,tx,ty,tw,th,3);ctx.fill();
+    ctx.strokeStyle=gcol;ctx.lineWidth=1;roundRect(ctx,tx,ty,tw,th,3);ctx.stroke();
+    ctx.fillStyle=gcol;ctx.fillText(lbl,sx,ty+th-4);ctx.textAlign='left';
+  });
+  if(lockedMsgTimer>0){
+    const a=Math.min(1,lockedMsgTimer/20);
+    ctx.save();ctx.globalAlpha=a;
+    ctx.fillStyle='rgba(0,0,0,0.82)';roundRect(ctx,VW/2-200,VH/2-18,400,32,6);ctx.fill();
+    ctx.strokeStyle='#cc2020';ctx.lineWidth=1;roundRect(ctx,VW/2-200,VH/2-18,400,32,6);ctx.stroke();
+    ctx.fillStyle='#ff7070';ctx.font='bold 13px Arial';ctx.textAlign='center';
+    ctx.fillText(lockedMsgText||'Defeat the act boss to unlock this area',VW/2,VH/2+2);
+    ctx.textAlign='left';ctx.restore();
+  }
+}
+
+// ── Render particles ───────────────────────────────────────────────────────
+function renderParticles(){
+  particles.forEach(p=>{
+    const sx=p.wx-camera.x,sy=p.wy-camera.y;
+    if(sx<-5||sx>VW+5||sy<-5||sy>VH+5)return;
+    ctx.save();ctx.globalAlpha=(p.life/p.maxLife)*0.9;
+    ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(sx,sy,p.size,0,Math.PI*2);ctx.fill();ctx.restore();
+  });
+}
+
+// ── Render monsters ────────────────────────────────────────────────────────
+function renderMonsters(){
+  monsters.forEach(m=>{
+    if(m.state==='dead')return;
+    const sx=m.wx-camera.x,sy=m.wy-camera.y;
+    if(sx<-60||sx>VW+60||sy<-60||sy>VH+60)return;
+    const mt=MTYPE[m.type],alpha=m.dying?(m.deathTimer/30):1;
+    ctx.save();ctx.globalAlpha=alpha;
+    const grd=ctx.createRadialGradient(sx,sy,m.r*0.4,sx,sy,m.r*2.4);
+    grd.addColorStop(0,mt.col+'80');grd.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath();ctx.arc(sx,sy,m.r*2.4,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill();
+    ctx.beginPath();ctx.arc(sx,sy,m.r,0,Math.PI*2);ctx.fillStyle=mt.col;ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.25)';ctx.lineWidth=1.5;ctx.stroke();
+    if(m.state==='chase'&&!m.dying){
+      ctx.fillStyle='#fff';
+      ctx.beginPath();ctx.arc(sx-3,sy-3,2.5,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(sx+3,sy-3,2.5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#111';
+      ctx.beginPath();ctx.arc(sx-3,sy-3,1.2,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(sx+3,sy-3,1.2,0,Math.PI*2);ctx.fill();
+    }
+    if(m.type===5&&!m.dying){
+      ctx.strokeStyle=`rgba(180,0,0,${0.4+0.3*Math.sin(frame*0.08)})`;ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(sx,sy,m.r+8,0,Math.PI*2);ctx.stroke();
+      ctx.font='16px Arial';ctx.textAlign='center';ctx.fillStyle='#ffe040';
+      ctx.fillText('👑',sx,sy-m.r-12);ctx.textAlign='left';
+    }
+    const isAB=mt.isActBoss;
+    if(isAB&&!m.dying){
+      // Pulsing dual-ring aura for act bosses
+      const pulse=0.5+0.5*Math.sin(frame*0.06);
+      const ringCol=mt.col;
+      ctx.strokeStyle=ringCol;ctx.lineWidth=3+pulse*2;ctx.globalAlpha=0.55+pulse*0.3;
+      ctx.beginPath();ctx.arc(sx,sy,m.r+10,0,Math.PI*2);ctx.stroke();
+      ctx.lineWidth=1.5;ctx.globalAlpha=0.3+pulse*0.2;
+      ctx.beginPath();ctx.arc(sx,sy,m.r+20,0,Math.PI*2);ctx.stroke();
+      ctx.globalAlpha=alpha;
+      // Boss name label
+      ctx.font='bold 11px Arial';ctx.textAlign='center';
+      ctx.fillStyle='rgba(0,0,0,0.7)';
+      const lw=ctx.measureText(mt.name).width+10;
+      roundRect(ctx,sx-lw/2,sy-m.r-32,lw,16,3);ctx.fill();
+      ctx.fillStyle=ringCol;ctx.fillText(mt.name,sx,sy-m.r-20);
+      ctx.textAlign='left';
+    }
+    if((m.hp<m.maxHp||m.state==='chase'||m.type===5||isAB)&&!m.dying){
+      const bw=m.r*2+8,bh=4,bx=sx-bw/2,by=sy-m.r-(isAB?36:m.type===5?28:12);
+      ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(bx,by,bw,bh);
+      const pct=m.hp/m.maxHp;
+      ctx.fillStyle=pct>0.5?'#50d030':pct>0.25?'#d0b020':'#d02020';ctx.fillRect(bx,by,bw*pct,bh);
+    }
+    ctx.restore();
+  });
+  if(attackFlash.active&&attackFlash.timer>0){
+    const sx=player.wx-camera.x,sy=player.wy-camera.y,tx=attackFlash.wx-camera.x,ty=attackFlash.wy-camera.y;
+    ctx.save();ctx.globalAlpha=attackFlash.timer/7;ctx.strokeStyle=PEL.orb;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(tx,ty);ctx.stroke();ctx.restore();
+  }
+}
+
+// ── Render NPCs (town only) ────────────────────────────────────────────────
+function renderNPCs(){
+  if(currentZoneId!=='town')return;
+  NPCS.forEach(n=>{
+    const sx=n.wx-camera.x,sy=n.wy-camera.y;
+    if(sx<-50||sx>VW+50||sy<-50||sy>VH+50)return;
+    const grd=ctx.createRadialGradient(sx,sy,4,sx,sy,22);
+    grd.addColorStop(0,n.color+'60');grd.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath();ctx.arc(sx,sy,22,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill();
+    ctx.fillStyle='#3a2a1a';ctx.fillRect(sx-8,sy-2,16,18);
+    ctx.fillStyle=n.color;ctx.beginPath();ctx.arc(sx,sy-8,8,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle=n.color;ctx.font='bold 9px Arial';ctx.textAlign='center';ctx.fillText(n.label,sx,sy-22);
+    const dist2=(n.wx-player.wx)**2+(n.wy-player.wy)**2;
+    if(dist2<48*48){
+      ctx.fillStyle='rgba(0,0,0,0.75)';roundRect(ctx,sx-28,sy-40,56,14,3);ctx.fill();
+      ctx.fillStyle='#fff';ctx.font='9px Arial';ctx.fillText('[E] to talk',sx,sy-30);
+    }
+    ctx.textAlign='left';
+  });
+}
+
+// ── Render player ──────────────────────────────────────────────────────────
+function renderPlayer(){
+  if(died)return;
+  const sx=player.wx-camera.x,sy=player.wy-camera.y,e=PEL;
+  const gh=ctx.createRadialGradient(sx,sy,4,sx,sy,24);
+  gh.addColorStop(0,e.glow);gh.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath();ctx.arc(sx,sy,24,0,Math.PI*2);ctx.fillStyle=gh;ctx.fill();
+  ctx.beginPath();ctx.arc(sx,sy,14,0,Math.PI*2);ctx.fillStyle=e.cloak;ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;ctx.stroke();
+  const offs={up:[0,-11],down:[0,7],left:[-9,0],right:[9,0]};
+  const[hox,hoy]=offs[player.facing];
+  ctx.beginPath();ctx.arc(sx+hox,sy+hoy,7,0,Math.PI*2);ctx.fillStyle=e.head;ctx.fill();
+  ctx.beginPath();ctx.arc(sx+hox,sy+hoy,4,0,Math.PI*2);ctx.fillStyle=e.hat;ctx.fill();
+  const ang={up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[player.facing];
+  const sx2=sx+Math.cos(ang)*20,sy2=sy+Math.sin(ang)*20;
+  ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx2,sy2);ctx.strokeStyle='#9a8060';ctx.lineWidth=3;ctx.stroke();
+  const og=ctx.createRadialGradient(sx2,sy2,0,sx2,sy2,6);
+  og.addColorStop(0,'#fff');og.addColorStop(0.5,e.head);og.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath();ctx.arc(sx2,sy2,6,0,Math.PI*2);ctx.fillStyle=og;ctx.fill();
+}
+
+// ── Render HUD ─────────────────────────────────────────────────────────────
+const SLOT_DEFS=[
+  {key:'helmet',label:'Helmet'},{key:'chestplate',label:'Chestplate'},
+  {key:'leggings',label:'Leggings'},{key:'shoes',label:'Shoes'},
+  {key:'wand1',label:'Wand Slot 1'},{key:'wand2',label:'Wand Slot 2'},
+];
+function renderHUD(){
+  // Mini-map
+  ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(MM_X-5,MM_Y-5,MM_W+10,MM_H+10);
+  ctx.drawImage(mmC,MM_X,MM_Y);
+  const pdx=MM_X+(player.wx/WORLD_W)*MM_W,pdy=MM_Y+(player.wy/WORLD_H)*MM_H;
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(pdx,pdy,2.5,0,Math.PI*2);ctx.fill();
+  if(currentZoneId==='town'){
+    NPCS.forEach(n=>{
+      const nx=MM_X+(n.wx/WORLD_W)*MM_W,ny=MM_Y+(n.wy/WORLD_H)*MM_H;
+      ctx.fillStyle='#f0c040';ctx.beginPath();ctx.arc(nx,ny,2,0,Math.PI*2);ctx.fill();
+    });
+  }
+  monsters.forEach(m=>{
+    if(m.dying||m.state==='dead')return;
+    const mx2=MM_X+(m.wx/WORLD_W)*MM_W,my2=MM_Y+(m.wy/WORLD_H)*MM_H;
+    ctx.fillStyle=MTYPE[m.type].col;ctx.beginPath();ctx.arc(mx2,my2,1.5,0,Math.PI*2);ctx.fill();
+  });
+  const vx=MM_X+(camera.x/WORLD_W)*MM_W,vy=MM_Y+(camera.y/WORLD_H)*MM_H;
+  const vw=(VW/WORLD_W)*MM_W,vh=(VH/WORLD_H)*MM_H;
+  ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=1;ctx.strokeRect(vx,vy,vw,vh);
+  // Zone label on minimap
+  const zc=ZONE_CFG[currentZoneId];
+  ctx.fillStyle=zc.color;ctx.font='bold 9px Arial';ctx.textAlign='center';
+  ctx.fillText(zc.name,MM_X+MM_W/2,MM_Y+MM_H+12);ctx.textAlign='left';
+
+  // Element badge
+  ctx.fillStyle='rgba(0,0,0,0.65)';roundRect(ctx,10,10,148,40,7);ctx.fill();
+  ctx.strokeStyle=PEL.label;ctx.lineWidth=1.2;roundRect(ctx,10,10,148,40,7);ctx.stroke();
+  const bg2=ctx.createRadialGradient(27,30,2,27,30,10);
+  bg2.addColorStop(0,'#fff');bg2.addColorStop(0.5,PEL.orb);bg2.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath();ctx.arc(27,30,10,0,Math.PI*2);ctx.fillStyle=bg2;ctx.fill();
+  ctx.fillStyle=PEL.label;ctx.font='bold 13px Arial';ctx.fillText(playerName,42,25);
+  ctx.font='10px Arial';ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText(PEL.name+' Mage',42,38);
+
+  // HP/XP/Gold bars
+  const maxHp=getMaxHp();
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(10,56,188,14);
+  const hpP=player.hp/maxHp;
+  ctx.fillStyle=hpP>0.5?'#44d044':hpP>0.25?'#d0b020':'#d02020';ctx.fillRect(10,56,188*hpP,14);
+  ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=1;ctx.strokeRect(10,56,188,14);
+  ctx.fillStyle='#fff';ctx.font='10px Arial';ctx.fillText(`HP  ${player.hp}/${maxHp}`,14,67);
+
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(10,74,188,8);
+  ctx.fillStyle='#7090ff';ctx.fillRect(10,74,188*(player.xp/player.xpToNext),8);
+  ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;ctx.strokeRect(10,74,188,8);
+  ctx.fillStyle='#aaa';ctx.font='9px Arial';ctx.fillText(`Lv${player.level}   XP ${player.xp}/${player.xpToNext}`,12,81);
+
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(10,86,188,14);
+  ctx.fillStyle='#f0c040';ctx.font='bold 10px Arial';ctx.fillText(`Gold: ${player.gold}g`,14,97);
+
+  if(player.skillPoints>0){
+    ctx.save();ctx.fillStyle=`rgba(255,215,40,${0.75+0.25*Math.sin(frame*0.12)})`;
+    roundRect(ctx,10,104,188,16,4);ctx.fill();
+    ctx.fillStyle='#1a1000';ctx.font='bold 10px Arial';ctx.textAlign='center';
+    ctx.fillText(`✨ ${player.skillPoints} skill pt${player.skillPoints>1?'s':''} — Tab`,104,116);
+    ctx.textAlign='left';ctx.restore();
+  }
+  const readyQ=questStates.filter(q=>q.status==='ready').length;
+  if(readyQ>0){
+    ctx.save();ctx.fillStyle=`rgba(64,192,240,${0.75+0.25*Math.sin(frame*0.1)})`;
+    roundRect(ctx,10,player.skillPoints>0?124:104,188,16,4);ctx.fill();
+    ctx.fillStyle='#001820';ctx.font='bold 10px Arial';ctx.textAlign='center';
+    const qy=player.skillPoints>0?136:116;
+    ctx.fillText(`${readyQ} quest${readyQ>1?'s':''} ready — Q`,104,qy);
+    ctx.textAlign='left';ctx.restore();
+  }
+  if(levelUpTimer>0){
+    levelUpTimer--;
+    ctx.save();ctx.globalAlpha=Math.min(1,levelUpTimer/20)*0.9;
+    ctx.fillStyle='rgba(255,220,80,0.12)';ctx.fillRect(0,0,VW,VH);
+    ctx.fillStyle='#ffe040';ctx.font='bold 38px Arial';ctx.textAlign='center';
+    ctx.fillText('LEVEL UP!',VW/2,VH/2-8);
+    ctx.font='16px Arial';ctx.fillStyle='#fff';ctx.fillText(`Lv ${player.level} — HP restored`,VW/2,VH/2+22);
+    ctx.textAlign='left';ctx.restore();
+  }
+  if(zoneToast.timer>0){
+    const a=Math.min(1,zoneToast.timer/30)*Math.min(1,(160-zoneToast.timer)/20+0.1);
+    ctx.save();ctx.globalAlpha=a;ctx.font='bold 22px Arial';ctx.textAlign='center';
+    const tw=ctx.measureText(zoneToast.name).width+28;
+    ctx.fillStyle='rgba(0,0,0,0.72)';roundRect(ctx,VW/2-tw/2,VH-70,tw,32,6);ctx.fill();
+    ctx.fillStyle='#fff';ctx.fillText(zoneToast.name,VW/2,VH-48);
+    ctx.textAlign='left';ctx.restore();
+  }
+  ctx.fillStyle='rgba(90,90,90,0.8)';ctx.font='11px Arial';
+  ctx.fillText('WASD  Tab:skills  I:inv  E:talk  Q:quests  M:maps  Space/1-3:skills  Esc:menu',10,VH-10);
+}
+
+// ── Zone announcement ──────────────────────────────────────────────────────
+function renderZoneAnnounce(){
+  if(zoneAnnounce.timer<=0)return;
+  zoneAnnounce.timer--;
+  const t=zoneAnnounce.timer;
+  const elapsed=190-t;
+  const a=elapsed<25?elapsed/25:t<30?t/30:1;
+  ctx.save();ctx.globalAlpha=a;
+  ctx.font='bold 44px Arial';ctx.textAlign='center';
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillText(zoneAnnounce.name,VW/2+2,VH/2+2);
+  ctx.fillStyle=zoneAnnounce.color;ctx.fillText(zoneAnnounce.name,VW/2,VH/2);
+  ctx.font='16px Arial';ctx.fillStyle='rgba(255,255,255,0.6)';
+  if(currentZoneId==='map')ctx.fillText('Walk south to Return to Town',VW/2,VH/2+34);
+  else if(currentZoneId!=='town')ctx.fillText('Walk south to Return to Town',VW/2,VH/2+34);
+  ctx.textAlign='left';ctx.restore();
+}
+
+// ── Zone transition overlay ────────────────────────────────────────────────
+function renderTransition(){
+  if(transition.phase==='none')return;
+  const a=transition.phase==='out'?transition.timer/35:1-transition.timer/35;
+  ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`;ctx.fillRect(0,0,VW,VH);
+}
+
+// ── Overlays ───────────────────────────────────────────────────────────────
+function renderInventory(){
+  invSlotRects=[];bagItemRects=[];invGemSocketRects=[];invUnlockSlotRects=[];
+  const pw=740,ph=490,px=(VW-pw)/2,py=(VH-ph)/2;
+  ctx.fillStyle='rgba(0,0,0,0.94)';roundRect(ctx,px,py,pw,ph,10);ctx.fill();
+  ctx.strokeStyle='#444';ctx.lineWidth=1.5;roundRect(ctx,px,py,pw,ph,10);ctx.stroke();
+  ctx.fillStyle='#eee';ctx.font='bold 16px Arial';ctx.textAlign='center';ctx.fillText('INVENTORY',VW/2,py+26);
+  ctx.fillStyle='#f0c040';ctx.font='11px Arial';ctx.fillText(`Gold: ${player.gold}g  |  Lv ${player.level}/100${player.ascended?' ✦ASCENDED':''}`,VW/2,py+42);
+  ctx.fillStyle='#555';ctx.font='10px Arial';
+  ctx.fillText(`ATK:${getAttack()}  SPD:${getSpeed().toFixed(1)}  MaxHP:${getMaxHp()}`,VW/2,py+56);
+  ctx.textAlign='left';
+
+  // Currency mode hint
+  if(currencyMode.active){
+    const currIt=getItemDat(currencyMode.currId);
+    ctx.save();ctx.fillStyle='rgba(200,100,255,0.18)';roundRect(ctx,px+8,py+62,pw-16,20,4);ctx.fill();
+    ctx.fillStyle='#cc88ff';ctx.font='bold 10px Arial';ctx.textAlign='center';
+    ctx.fillText(`${currIt?.icon||''} ${currIt?.name||''} — click item to apply  (Esc to cancel)`,VW/2,py+76);
+    ctx.textAlign='left';ctx.restore();
+  }
+
+  const sX=px+14,sW=286,sH=34;
+  SLOT_DEFS.forEach((sd,i)=>{
+    const sy=py+86+i*38,eq=player.inventory[sd.key];
+    const isSelected=invSelectedSlot===sd.key;
+    ctx.fillStyle=isSelected?'rgba(255,220,80,0.10)':'rgba(255,255,255,0.03)';roundRect(ctx,sX,sy,sW,sH,4);ctx.fill();
+    ctx.strokeStyle=isSelected?'#ffe040':eq?'#667':'#2a2a2a';ctx.lineWidth=isSelected?1.5:1;roundRect(ctx,sX,sy,sW,sH,4);ctx.stroke();
+    ctx.fillStyle='#444';ctx.font='9px Arial';ctx.fillText(sd.label,sX+5,sy+11);
+    if(eq){
+      const it=getItemDat(eq);
+      if(it){
+        const rcol=it.rarity?RARITY_CLR[it.rarity]:'#ddd';
+        ctx.fillStyle=rcol;ctx.font='bold 10px Arial';ctx.fillText(`${it.icon} ${it.name}`,sX+6,sy+24);
+        if(it.stats){
+          ctx.fillStyle='#888';ctx.font='8px Arial';
+          const statStr=Object.entries(it.stats).map(([k,v])=>'+'+v+' '+k.replace('Dmg',' Dmg')).join('  ');
+          ctx.fillText(statStr.substring(0,52),sX+sW*0.43,sy+24);
+        }
+        // Gem sockets for this slot
+        if(it.gemSlots>0){
+          const unlocked=getSlotGemCount(sd.key);
+          for(let gi=0;gi<it.gemSlots;gi++){
+            const gx=sX+sW+8+gi*22,gy=sy+5;
+            const g=it.gems[gi];
+            const gDef=g?(SKILL_GEMS[g]||SUPPORT_GEM_DEFS[g]):null;
+            const sockCol=gDef?gDef.color:'#1e1e22';
+            ctx.fillStyle=sockCol+'44';roundRect(ctx,gx,gy,18,18,3);ctx.fill();
+            ctx.strokeStyle=g?sockCol:'#555';ctx.lineWidth=1;roundRect(ctx,gx,gy,18,18,3);ctx.stroke();
+            if(gDef){ctx.font='11px Arial';ctx.textAlign='center';ctx.fillStyle='#fff';
+              ctx.fillText(gDef.icon,gx+9,gy+13);ctx.textAlign='left';}
+            invGemSocketRects.push({x:gx,y:gy,w:18,h:18,slotKey:sd.key,socketIdx:gi});
+          }
+          // Unlock next slot button
+          if(it.gemSlots<5&&it.gemSlots<unlocked){
+            const ux=sX+sW+8+it.gemSlots*22,uy=sy+5;
+            ctx.fillStyle='rgba(255,220,64,0.12)';roundRect(ctx,ux,uy,18,18,3);ctx.fill();
+            ctx.strokeStyle='#ffe040';ctx.lineWidth=1;roundRect(ctx,ux,uy,18,18,3);ctx.stroke();
+            ctx.fillStyle='#ffe040';ctx.font='bold 11px Arial';ctx.textAlign='center';ctx.fillText('+',ux+9,uy+13);ctx.textAlign='left';
+            invUnlockSlotRects.push({x:ux,y:uy,w:18,h:18,slotKey:sd.key});
+          }
+        }
+      }
+    }else{ctx.fillStyle='#2a2a2a';ctx.font='italic 9px Arial';ctx.fillText('— empty —',sX+sW/2-22,sy+24);}
+    invSlotRects.push({x:sX,y:sy,w:sW,h:sH,slot:sd.key});
+  });
+
+  // Gem socket hint
+  if(invSelectedSlot){
+    const sit=getItemDat(player.inventory[invSelectedSlot]);
+    if(sit&&sit.gemSlots){
+      ctx.fillStyle='rgba(255,220,80,0.75)';ctx.font='bold 9px Arial';
+      ctx.fillText('Click a gem in bag to socket →',sX,py+86+6*38+6);
+    }
+  }
+
+  // Bag
+  const bagHdr=py+86+6*38+18;
+  ctx.fillStyle='#777';ctx.font='bold 10px Arial';ctx.fillText('BAG  (click currency then item to use  |  click skill gem with slot selected to socket)',sX,bagHdr);
+  const bagY=bagHdr+10,CELL=46;
+  player.inventory.bag.forEach((item,i)=>{
+    const col=i%7,row=Math.floor(i/7),bx=sX+col*CELL,by=bagY+row*CELL;
+    const it=getItemDat(item);
+    const rcol=it?.rarity?RARITY_CLR[it.rarity]:'#333';
+    const isActiveCurr=currencyMode.active&&item===currencyMode.currId;
+    ctx.fillStyle=isActiveCurr?'rgba(200,100,255,0.25)':'rgba(255,255,255,0.05)';
+    roundRect(ctx,bx,by,CELL-3,CELL-3,4);ctx.fill();
+    ctx.strokeStyle=isActiveCurr?'#cc88ff':rcol;ctx.lineWidth=isActiveCurr?2:1;roundRect(ctx,bx,by,CELL-3,CELL-3,4);ctx.stroke();
+    if(it){
+      ctx.font='18px Arial';ctx.textAlign='center';ctx.fillText(it.icon,bx+(CELL-3)/2,by+22);
+      ctx.font='6px Arial';ctx.fillStyle=it.rarity?RARITY_CLR[it.rarity]:'#888';
+      ctx.fillText((it.name||'').substring(0,8),bx+(CELL-3)/2,by+34);ctx.textAlign='left';
+    }
+    bagItemRects.push({x:bx,y:by,w:CELL-3,h:CELL-3,index:i});
+  });
+  if(!player.inventory.bag.length){ctx.fillStyle='#333';ctx.font='italic 10px Arial';ctx.fillText('— bag empty —',sX+60,bagY+22);}
+  ctx.fillStyle='rgba(90,90,90,0.8)';ctx.font='10px Arial';ctx.textAlign='center';ctx.fillText('I/Esc close  |  Click slot to select  |  Space/1/2/3 use skills  |  M maps',VW/2,py+ph-10);ctx.textAlign='left';
+}
+
+function renderShop(){
+  shopItemRects=[];
+  const pw=660,ph=460,px=(VW-pw)/2,py=(VH-ph)/2;
+  ctx.fillStyle='rgba(0,0,0,0.93)';roundRect(ctx,px,py,pw,ph,10);ctx.fill();
+  ctx.strokeStyle='#f0c04055';ctx.lineWidth=1.5;roundRect(ctx,px,py,pw,ph,10);ctx.stroke();
+  ctx.fillStyle='#f0c040';ctx.font='bold 17px Arial';ctx.textAlign='center';ctx.fillText('SHOP',VW/2,py+28);
+  ctx.fillStyle='#aaa';ctx.font='12px Arial';ctx.fillText(`Your gold: ${player.gold}g`,VW/2,py+46);ctx.textAlign='left';
+  const half=Math.ceil(SHOP_LIST.length/2),colW=(pw-40)/2;
+  [SHOP_LIST.slice(0,half),SHOP_LIST.slice(half)].forEach((col,ci)=>{
+    const cx=px+14+ci*(colW+12);
+    col.forEach((id,ri)=>{
+      const it=ITEMS[id];if(!it)return;
+      const iy=py+60+ri*36,canBuy=player.gold>=it.cost;
+      ctx.fillStyle='rgba(255,255,255,0.04)';roundRect(ctx,cx,iy,colW,30,4);ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;roundRect(ctx,cx,iy,colW,30,4);ctx.stroke();
+      ctx.font='13px Arial';ctx.fillStyle=canBuy?'#ddd':'#555';ctx.fillText(`${it.icon} ${it.name}`,cx+6,iy+19);
+      ctx.font='10px Arial';ctx.fillStyle='#888';ctx.fillText(it.desc,cx+colW*0.48,iy+12);
+      const btnW=54,btnX=cx+colW-btnW-4,btnY=iy+4,btnH=22;
+      ctx.fillStyle=canBuy?'rgba(240,192,64,0.22)':'rgba(255,255,255,0.04)';roundRect(ctx,btnX,btnY,btnW,btnH,4);ctx.fill();
+      ctx.strokeStyle=canBuy?'#f0c040':'#333';ctx.lineWidth=1;roundRect(ctx,btnX,btnY,btnW,btnH,4);ctx.stroke();
+      ctx.fillStyle=canBuy?'#f0c040':'#444';ctx.font='bold 10px Arial';ctx.textAlign='center';
+      ctx.fillText(`${it.cost}g`,btnX+btnW/2,btnY+15);ctx.textAlign='left';
+      shopItemRects.push({id,x:btnX,y:btnY,w:btnW,h:btnH});
+    });
+  });
+  ctx.fillStyle='rgba(90,90,90,0.8)';ctx.font='11px Arial';ctx.textAlign='center';ctx.fillText('E / Esc — close',VW/2,py+ph-10);ctx.textAlign='left';
+}
+
+function renderQuestLog(){
+  questClaimRects=[];
+  const ACT_INFO={
+    1:{label:'Act I — The Water',         color:'#5db8ff', boss:'The Water, Failed to Take Shape'},
+    2:{label:'Act II — Uncontrolled Fire', color:'#f27240', boss:'Uncontrolled Fire'},
+    3:{label:'Act III — The Iced Automaton',color:'#7adcf5',boss:'The Iced Automaton'},
+    4:{label:'Act IV — Thunder Manifestation',color:'#b06aff',boss:'The Thunder Manifestation'},
+  };
+  const pw=560,ph=500,px=(VW-pw)/2,py=(VH-ph)/2;
+  ctx.fillStyle='rgba(0,0,0,0.95)';roundRect(ctx,px,py,pw,ph,10);ctx.fill();
+  ctx.strokeStyle='#40c0f044';ctx.lineWidth=1.5;roundRect(ctx,px,py,pw,ph,10);ctx.stroke();
+  ctx.fillStyle='#40c0f0';ctx.font='bold 17px Arial';ctx.textAlign='center';
+  ctx.fillText('QUEST LOG',VW/2,py+28);ctx.textAlign='left';
+  ctx.fillStyle='#555';ctx.font='10px Arial';
+  ctx.fillText(`Kills — Slimes:${killCounts[0]}  Imps:${killCounts[1]}  Golems:${killCounts[2]}  Wisps:${killCounts[3]}  Sprites:${killCounts[4]}`,px+14,py+44);
+
+  let cy=py+60;
+  for(let act=1;act<=4;act++){
+    const ai=ACT_INFO[act];
+    const unlocked=isActUnlocked(act);
+    // Act header
+    ctx.fillStyle=unlocked?ai.color:'#333';
+    ctx.font='bold 12px Arial';
+    ctx.fillText((actBossDefeated[act-1]?'✓ ':'')+ai.label,px+14,cy+13);
+    if(!unlocked){
+      ctx.fillStyle='#444';ctx.font='10px Arial';
+      const prevBossName=act>1?MTYPE[4+act].name:''; // MTYPE 6=Act1boss,7=Act2,8=Act3,9=Act4; prev boss = 6+(act-2)=act+4
+      ctx.fillText(`Locked — defeat ${prevBossName||'previous boss'} (Act ${act-1})`,px+14,cy+26);
+      cy+=38;continue;
+    }
+    ctx.fillStyle='#333';ctx.font='10px Arial';
+    ctx.fillText(`Boss: ${ai.boss}`,px+14,cy+26);
+    cy+=36;
+
+    // Quests for this act
+    const actQuests=questStates.filter(q=>q.act===act);
+    actQuests.forEach((q,qi)=>{
+      const globalIdx=questStates.indexOf(q);
+      const locked2=q.status==='active'&&!isActUnlocked(q.act);
+      const color=locked2?'#333':q.status==='claimed'?'#444':q.status==='ready'?ai.color:'#777';
+      ctx.fillStyle='rgba(255,255,255,0.025)';roundRect(ctx,px+10,cy,pw-20,36,4);ctx.fill();
+      ctx.strokeStyle=q.status==='ready'?ai.color+'44':'#1a1a1a';ctx.lineWidth=1;roundRect(ctx,px+10,cy,pw-20,36,4);ctx.stroke();
+      ctx.fillStyle=color;ctx.font='bold 11px Arial';
+      ctx.fillText(q.status==='claimed'?`✓ ${q.name}`:q.name,px+18,cy+14);
+      ctx.fillStyle='#555';ctx.font='10px Arial';ctx.fillText(q.desc,px+18,cy+27);
+      const rwd=[];if(q.reward.gold)rwd.push(`${q.reward.gold}g`);if(q.reward.xp)rwd.push(`${q.reward.xp}xp`);
+      if(q.reward.item)rwd.push(ITEMS[q.reward.item]?.name||q.reward.item);
+      ctx.fillStyle='#444';ctx.fillText(`  Reward: ${rwd.join(', ')}`,px+pw*0.42,cy+27);
+      if(q.status==='ready'){
+        const bx=px+pw-82,by=cy+5,bw=68,bh=24;
+        ctx.fillStyle=`${ai.color}33`;roundRect(ctx,bx,by,bw,bh,4);ctx.fill();
+        ctx.strokeStyle=ai.color;ctx.lineWidth=1.2;roundRect(ctx,bx,by,bw,bh,4);ctx.stroke();
+        ctx.fillStyle=ai.color;ctx.font='bold 10px Arial';ctx.textAlign='center';
+        ctx.fillText('CLAIM',bx+bw/2,by+16);ctx.textAlign='left';
+        questClaimRects.push({x:bx,y:by,w:bw,h:bh,idx:globalIdx});
+      }
+      cy+=38;
+    });
+    cy+=4;
+  }
+  ctx.fillStyle='rgba(90,90,90,0.8)';ctx.font='11px Arial';ctx.textAlign='center';ctx.fillText('Q / Esc — close',VW/2,py+ph-10);ctx.textAlign='left';
+}
+
+function renderSkillTree(){
+  ctx.fillStyle='#070708';ctx.fillRect(0,0,VW,VH);
+  // Header (screen space)
+  ctx.fillStyle='#ccc';ctx.font='bold 17px Arial';ctx.textAlign='center';ctx.fillText('SKILL TREE',VW/2,26);
+  ctx.font='11px Arial';ctx.fillStyle=player.skillPoints>0?'#ffe040':'#444';
+  ctx.fillText(player.skillPoints>0?`${player.skillPoints} skill point${player.skillPoints>1?'s':''}  —  click a glowing node`:'No skill points — defeat monsters to level up',VW/2,44);
+  ctx.textAlign='left';
+
+  const tz=stView.zoom,tx2=VW/2-stView.x*tz,ty2=VH/2-stView.y*tz;
+  ctx.save();ctx.translate(tx2,ty2);ctx.scale(tz,tz);
+
+  // Edges
+  const nodeMap={};stNodes.forEach(n=>{nodeMap[n.id]=n;});
+  ST_EDGES.forEach(([a,b])=>{
+    const na=nodeMap[a],nb=nodeMap[b];if(!na||!nb)return;
+    const both=na.unlocked&&nb.unlocked;
+    ctx.beginPath();ctx.moveTo(na.x,na.y);ctx.lineTo(nb.x,nb.y);
+    ctx.strokeStyle=both?'rgba(220,175,85,0.85)':'rgba(160,120,55,0.28)';
+    ctx.lineWidth=both?2/tz:1/tz;ctx.stroke();
+  });
+
+  // Hover (in virtual coords)
+  const{vx:mvx,vy:mvy}=stStoV(mouseX,mouseY);
+  const TIER_R=[6,13,20],TIER_HIT=[10,16,24];
+  let hovered=null;
+  stNodes.forEach(n=>{const r=TIER_HIT[n.tier],dx=mvx-n.x,dy=mvy-n.y;if(dx*dx+dy*dy<r*r)hovered=n;});
+
+  // Nodes
+  stNodes.forEach(n=>{
+    const col=STAT_CLR[n.stat]||'#aaa',nr=TIER_R[n.tier],isH=n===hovered;
+    // Keystone outer rings
+    if(n.tier===2){
+      const pulse=n.available&&!n.unlocked?0.45+0.45*Math.sin(frame*0.09):0.6;
+      ctx.save();ctx.globalAlpha=pulse;
+      ctx.beginPath();ctx.arc(n.x,n.y,nr+12,0,Math.PI*2);ctx.strokeStyle=col+'55';ctx.lineWidth=2;ctx.stroke();
+      ctx.beginPath();ctx.arc(n.x,n.y,nr+7, 0,Math.PI*2);ctx.strokeStyle=col+'88';ctx.lineWidth=1.5;ctx.stroke();
+      ctx.restore();
+    }
+    if(n.unlocked){
+      const g=ctx.createRadialGradient(n.x,n.y,1,n.x,n.y,nr);
+      g.addColorStop(0,'#fff');g.addColorStop(0.5,col);g.addColorStop(1,col+'88');
+      ctx.beginPath();ctx.arc(n.x,n.y,nr,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.65)';ctx.lineWidth=n.tier>0?1.5:1;ctx.stroke();
+    }else if(n.available){
+      ctx.beginPath();ctx.arc(n.x,n.y,nr,0,Math.PI*2);ctx.fillStyle=col+'28';ctx.fill();
+      if(player.skillPoints>0){
+        ctx.save();ctx.globalAlpha=0.5+0.45*Math.sin(frame*0.1);
+        ctx.strokeStyle=col;ctx.lineWidth=n.tier>0?2:1.5;ctx.stroke();ctx.restore();
+      }else{ctx.setLineDash([3,3]);ctx.strokeStyle=col+'66';ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);}
+    }else{
+      ctx.beginPath();ctx.arc(n.x,n.y,nr,0,Math.PI*2);
+      ctx.fillStyle=n.tier===2?'#1c1c22':n.tier===1?'#141418':'#0e0e10';ctx.fill();
+      ctx.strokeStyle=n.tier>0?'#282830':'#1a1a1e';ctx.lineWidth=1;ctx.stroke();
+    }
+    if(isH){ctx.beginPath();ctx.arc(n.x,n.y,nr+4,0,Math.PI*2);ctx.strokeStyle='rgba(255,255,255,0.45)';ctx.lineWidth=1.5;ctx.stroke();}
+    // Labels
+    if(n.tier>0||isH){
+      const fs=n.tier===2?11:n.tier===1?9:8;
+      ctx.font=n.unlocked?`bold ${fs}px Arial`:`${fs}px Arial`;ctx.textAlign='center';
+      ctx.fillStyle=n.unlocked?'#eee':n.available?col:'#333';
+      ctx.fillText(n.lbl,n.x,n.y+nr+fs+3);ctx.textAlign='left';
+    }
+  });
+
+  ctx.restore();
+
+  // Tooltip (screen space)
+  if(hovered){
+    const n=hovered;
+    const SF={iceDmg:'ice dmg',elecDmg:'elec dmg',waterDmg:'water dmg',fireDmg:'fire dmg',
+              strength:'strength',speed:'speed',hp:'max HP',defense:'defense',
+              regen:'regen/s',critChance:'crit%',range:'range'};
+    const tip=`${n.lbl}  +${n.val} ${SF[n.stat]||n.stat}`;
+    ctx.font='11px Arial';const tw=ctx.measureText(tip).width+16;
+    let tipX=mouseX-tw/2,tipY=mouseY-36;
+    tipX=Math.max(4,Math.min(VW-tw-4,tipX));tipY=Math.max(50,tipY);
+    ctx.fillStyle='rgba(8,8,14,0.96)';roundRect(ctx,tipX,tipY,tw,20,4);ctx.fill();
+    ctx.strokeStyle=STAT_CLR[n.stat]||'#666';ctx.lineWidth=1;roundRect(ctx,tipX,tipY,tw,20,4);ctx.stroke();
+    ctx.fillStyle='#ddd';ctx.textAlign='center';ctx.fillText(tip,tipX+tw/2,tipY+14);ctx.textAlign='left';
+  }
+
+  ctx.fillStyle='rgba(70,70,70,0.8)';ctx.font='10px Arial';ctx.textAlign='center';
+  ctx.fillText('Tab/Esc — close   Scroll — zoom   Drag — pan',VW/2,VH-8);ctx.textAlign='left';
+}
+
+function renderProjectiles(){
+  projectiles.forEach(p=>{
+    const sx=p.wx-camera.x,sy=p.wy-camera.y;
+    if(p.type==='meteor'&&!p.hit){
+      const core=p.isIce?'#88ccff':  '#ff8800';
+      const mid= p.isIce?'#aaeeff':  '#ff7700';
+      const out= p.isIce?'rgba(100,180,255,0)':'rgba(180,30,0,0)';
+      const trailC=p.isIce?'#88ccff':'#ff5500';
+      const g2=ctx.createRadialGradient(sx,sy,0,sx,sy,p.isIce?16:20);
+      g2.addColorStop(0,'#ffffff');g2.addColorStop(0.4,mid);g2.addColorStop(1,out);
+      ctx.beginPath();ctx.arc(sx,sy,p.isIce?16:20,0,Math.PI*2);ctx.fillStyle=g2;ctx.fill();
+      ctx.beginPath();ctx.arc(sx,sy,p.isIce?7:9,0,Math.PI*2);ctx.fillStyle=core;ctx.fill();
+      ctx.save();ctx.globalAlpha=0.4;ctx.strokeStyle=trailC;ctx.lineWidth=p.isIce?3:4;
+      ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx-4,sy-16);ctx.stroke();ctx.restore();
+    }else if(p.type==='ice_lance'){
+      const lc=p.color||'#aaeeff';const oc=p.color||'#7adcf5';
+      ctx.save();
+      ctx.strokeStyle=lc;ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx-p.vx*4,sy-p.vy*4);ctx.stroke();
+      const g2=ctx.createRadialGradient(sx,sy,0,sx,sy,p.r+4);
+      g2.addColorStop(0,'#ffffff');g2.addColorStop(1,oc);
+      ctx.beginPath();ctx.arc(sx,sy,p.r+4,0,Math.PI*2);ctx.fillStyle=g2;ctx.fill();
+      ctx.restore();
+    }else if(p.type==='thunder'){
+      const tx=p.tx-camera.x,ty=p.ty-camera.y;
+      ctx.save();ctx.globalAlpha=p.life/p.maxLife;
+      ctx.strokeStyle='#ddaaff';ctx.lineWidth=3;ctx.shadowBlur=14;ctx.shadowColor='#b06aff';
+      ctx.beginPath();ctx.moveTo(sx,sy);
+      const steps=5,ddx=(tx-sx)/steps,ddy=(ty-sy)/steps;
+      for(let j=1;j<steps;j++)ctx.lineTo(sx+ddx*j+(Math.random()-0.5)*18,sy+ddy*j+(Math.random()-0.5)*18);
+      ctx.lineTo(tx,ty);ctx.stroke();ctx.restore();
+    }else if(p.type==='wave'){
+      const wx2=p.wx-camera.x,wy2=p.wy-camera.y;
+      const wc=p.color||'#70c1f2';
+      const wc2=p.color?p.color+'40':'rgba(180,240,255,0.25)';
+      ctx.save();ctx.globalAlpha=(p.life/p.maxLife)*0.75;
+      ctx.strokeStyle=wc;ctx.lineWidth=5;
+      ctx.beginPath();ctx.arc(wx2,wy2,p.r,0,Math.PI*2);ctx.stroke();
+      ctx.strokeStyle=wc2;ctx.lineWidth=14;
+      ctx.beginPath();ctx.arc(wx2,wy2,p.r,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+    }else if(p.type==='void_orb'){
+      ctx.save();
+      const ag=Math.min(1,p.life/30);
+      ctx.globalAlpha=ag;
+      const g2=ctx.createRadialGradient(sx,sy,0,sx,sy,p.r+8);
+      g2.addColorStop(0,'#cc88ff');g2.addColorStop(0.5,'#8800ff');g2.addColorStop(1,'rgba(80,0,160,0)');
+      ctx.beginPath();ctx.arc(sx,sy,p.r+8,0,Math.PI*2);ctx.fillStyle=g2;ctx.fill();
+      ctx.beginPath();ctx.arc(sx,sy,p.r,0,Math.PI*2);ctx.fillStyle='#220044';ctx.fill();
+      ctx.strokeStyle='#aa44ff';ctx.lineWidth=2;ctx.stroke();
+      // Spiral trail particles
+      ctx.globalAlpha=ag*0.5;ctx.strokeStyle='#aa44ff';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx-p.vx*6,sy-p.vy*6);ctx.stroke();
+      ctx.restore();
+    }
+  });
+}
+
+function renderSkillBar(){
+  const gems=getSocketedGems().filter(g=>SKILL_GEMS[g.gemId]);
+  if(!gems.length)return;
+  const n=Math.min(3,gems.length),bw=54,bh=54,gap=8;
+  const totalW=n*(bw+gap)-gap,bx=(VW-totalW)/2,by=VH-bh-14;
+  gems.slice(0,3).forEach((g,i)=>{
+    const sg=SKILL_GEMS[g.gemId];
+    const cd=player.gemCooldowns[g.gemId]||0;
+    const x2=bx+i*(bw+gap);
+    ctx.fillStyle='rgba(0,0,0,0.72)';roundRect(ctx,x2,by,bw,bh,6);ctx.fill();
+    ctx.strokeStyle=sg.color;ctx.lineWidth=1.5;roundRect(ctx,x2,by,bw,bh,6);ctx.stroke();
+    ctx.font='26px Arial';ctx.textAlign='center';ctx.fillText(sg.icon,x2+bw/2,by+32);
+    ctx.font='bold 9px Arial';ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fillText(`${i+1}`,x2+8,by+14);
+    if(cd>0){
+      ctx.save();ctx.globalAlpha=0.55;ctx.fillStyle='#000';roundRect(ctx,x2,by,bw,bh,6);ctx.fill();ctx.restore();
+      ctx.fillStyle='#fff';ctx.font='bold 14px Arial';ctx.fillText(Math.ceil(cd/60)+'s',x2+bw/2,by+bh/2+5);
+    }
+    ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='8px Arial';ctx.fillText(sg.name.split(' ')[0],x2+bw/2,by+bh-4);
+    ctx.textAlign='left';
+  });
+}
+
+function renderMapMenu(){
+  mapFragRects=[];
+  const pw=640,ph=400,px=(VW-pw)/2,py=(VH-ph)/2;
+  ctx.fillStyle='rgba(0,0,0,0.95)';roundRect(ctx,px,py,pw,ph,10);ctx.fill();
+  ctx.strokeStyle='#ffdd4455';ctx.lineWidth=1.5;roundRect(ctx,px,py,pw,ph,10);ctx.stroke();
+  ctx.fillStyle='#ffdd44';ctx.font='bold 17px Arial';ctx.textAlign='center';
+  ctx.fillText('MAP DEVICE',VW/2,py+28);
+  if(!player.ascended){
+    ctx.fillStyle='#888';ctx.font='13px Arial';ctx.fillText('Reach Level 50 to Ascend and unlock Maps',VW/2,py+70);
+    ctx.fillStyle='#555';ctx.font='11px Arial';ctx.fillText(`Level ${player.level} / 50`,VW/2,py+90);
+    ctx.fillStyle='rgba(90,90,90,0.8)';ctx.font='10px Arial';ctx.fillText('M / Esc — close',VW/2,py+ph-14);
+    ctx.textAlign='left';return;
+  }
+  ctx.fillStyle='#888';ctx.font='11px Arial';ctx.fillText('Map fragments drop from monsters — enter to clear all enemies',VW/2,py+46);ctx.textAlign='left';
+  const mapFrags=[];
+  player.inventory.bag.forEach((item,i)=>{
+    const it=getItemDat(item);if(it&&it.type==='map')mapFrags.push({item,bagIdx:i,it});
+  });
+  if(!mapFrags.length){
+    ctx.fillStyle='#444';ctx.font='italic 12px Arial';ctx.textAlign='center';
+    ctx.fillText('No map fragments found yet — defeat monsters to find some',VW/2,py+ph/2);ctx.textAlign='left';
+  }else{
+    mapFrags.forEach((mf,i)=>{
+      const col=i%4,row=Math.floor(i/4);
+      const mx2=px+20+col*152,my2=py+62+row*76;
+      ctx.fillStyle='rgba(255,220,64,0.07)';roundRect(ctx,mx2,my2,144,66,5);ctx.fill();
+      ctx.strokeStyle='#ffdd4444';ctx.lineWidth=1;roundRect(ctx,mx2,my2,144,66,5);ctx.stroke();
+      ctx.fillStyle='#ffdd44';ctx.font='bold 11px Arial';
+      ctx.fillText(`${mf.it.icon} ${mf.it.name}`,mx2+8,my2+20);
+      ctx.fillStyle='#888';ctx.font='9px Arial';ctx.fillText(mf.it.desc||'',mx2+8,my2+32);
+      // Enter button
+      ctx.fillStyle='rgba(255,220,64,0.22)';roundRect(ctx,mx2+8,my2+40,128,18,3);ctx.fill();
+      ctx.strokeStyle='#ffe040';ctx.lineWidth=1;roundRect(ctx,mx2+8,my2+40,128,18,3);ctx.stroke();
+      ctx.fillStyle='#ffe080';ctx.font='bold 9px Arial';ctx.textAlign='center';
+      ctx.fillText('ENTER MAP',mx2+72,my2+53);ctx.textAlign='left';
+      mapFragRects.push({x:mx2+8,y:my2+40,w:128,h:18,tier:mf.it.tier});
+    });
+  }
+  ctx.fillStyle='rgba(90,90,90,0.8)';ctx.font='10px Arial';ctx.textAlign='center';
+  ctx.fillText('M / Esc — close',VW/2,py+ph-10);ctx.textAlign='left';
+}
+
+function renderDied(){
+  ctx.fillStyle='rgba(60,0,0,0.78)';ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle='#ff4444';ctx.font='bold 52px Arial';ctx.textAlign='center';ctx.fillText('YOU DIED',VW/2,VH/2-22);
+  ctx.fillStyle='#ccc';ctx.font='17px Arial';ctx.fillText('Press R to respawn at Town',VW/2,VH/2+20);ctx.textAlign='left';
+}
+
+// ── Wake-up / barrel sequence ──────────────────────────────────────────────
+function updateWake(){
+  if(wakeState==='sleeping')return;
+  if(wakeState==='waking'){
+    wakeTimer++;
+    barrelObjs.forEach(b=>{
+      if(b.landed)return;
+      b.wx+=b.vx;
+      if(b.wx>=16*TS){b.wx=16*TS+(b===barrelObjs[0]?0:TS);b.landed=true;}
+    });
+    if(barrelObjs.every(b=>b.landed)&&wakeTimer>60){
+      const sw={1:'tide_staff',2:'fire_wand',3:'thunder_rod',4:'ice_wand'}[playerElement];
+      const sg={1:'water_gem', 2:'fire_gem',  3:'elec_gem',   4:'ice_gem' }[playerElement];
+      equipItem(sw);equipItem(sg);
+      wakeMessage=`Found: ${ITEMS[sw].name} & ${ITEMS[sg].name}`;
+      wakeMessageTimer=220;wakeState='playing';
+    }
+  }
+  if(wakeMessageTimer>0)wakeMessageTimer--;
+}
+
+function renderDrops(){
+  groundDrops.forEach(d=>{
+    const sx=d.wx-camera.x,sy=d.wy-camera.y;
+    if(sx<-24||sx>VW+24||sy<-24||sy>VH+24)return;
+    const it=d.item?d.item:getItemDat(d.id);
+    const glowClr=it&&it.rarity?{magic:'rgba(100,120,255,0.4)',rare:'rgba(255,220,40,0.4)'}[it.rarity]||'rgba(255,255,180,0.35)':'rgba(255,255,180,0.35)';
+    const grd=ctx.createRadialGradient(sx,sy,0,sx,sy,18);
+    grd.addColorStop(0,glowClr);grd.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath();ctx.arc(sx,sy,18,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill();
+    ctx.save();ctx.globalAlpha=0.65+0.3*Math.sin(frame*0.12);
+    ctx.font='16px Arial';ctx.textAlign='center';
+    ctx.fillText(it?it.icon:'?',sx,sy+6);ctx.textAlign='left';ctx.restore();
+  });
+}
+
+function renderWake(){
+  if(wakeState==='playing'){
+    if(wakeMessageTimer>0){
+      const a=Math.min(1,wakeMessageTimer/30);
+      ctx.save();ctx.globalAlpha=a;ctx.font='bold 13px Arial';
+      const tw=ctx.measureText(wakeMessage).width+32;
+      ctx.fillStyle='rgba(0,0,0,0.84)';roundRect(ctx,(VW-tw)/2,VH-92,tw,28,6);ctx.fill();
+      ctx.strokeStyle='#ffe080';ctx.lineWidth=1;roundRect(ctx,(VW-tw)/2,VH-92,tw,28,6);ctx.stroke();
+      ctx.fillStyle='#ffe080';ctx.textAlign='center';ctx.fillText(wakeMessage,VW/2,VH-72);
+      ctx.textAlign='left';ctx.restore();
+    }
+    return;
+  }
+  if(wakeState==='sleeping'){
+    ctx.fillStyle='rgba(0,0,0,0.94)';ctx.fillRect(0,0,VW,VH);
+    ctx.fillStyle='#8ab4d8';ctx.font='bold 30px Arial';ctx.textAlign='center';
+    ctx.fillText('You are washed ashore...',VW/2,VH/2-40);
+    ctx.font='16px Arial';ctx.fillStyle='#cccccc';
+    ctx.fillText(`${playerName}  —  ${PEL.name} Mage`,VW/2,VH/2+2);
+    ctx.save();ctx.globalAlpha=0.5+0.5*Math.sin(frame*0.07);
+    ctx.fillStyle='#aaaaaa';ctx.font='13px Arial';
+    ctx.fillText('Press any key to wake up',VW/2,VH/2+44);
+    ctx.restore();ctx.textAlign='left';return;
+  }
+  // waking: fade overlay out while barrels float in
+  const fadeA=Math.max(0,0.94-(wakeTimer/45));
+  if(fadeA>0){ctx.save();ctx.globalAlpha=fadeA;ctx.fillStyle='rgba(0,0,0,0.94)';ctx.fillRect(0,0,VW,VH);ctx.restore();}
+  barrelObjs.forEach(b=>{
+    const sx=b.wx-camera.x,sy=b.wy-camera.y;
+    if(sx<-40||sx>VW+40)return;
+    ctx.fillStyle='#8B6914';ctx.fillRect(sx-10,sy-14,20,28);
+    ctx.strokeStyle='#5a4010';ctx.lineWidth=2;ctx.strokeRect(sx-10,sy-14,20,28);
+    ctx.strokeStyle='#3a2808';ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(sx-12,sy-5);ctx.lineTo(sx+12,sy-5);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(sx-12,sy+5);ctx.lineTo(sx+12,sy+5);ctx.stroke();
+  });
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+currentZoneId='beach';
+buildZoneMap('beach');
+rebuildMinimap();
+spawnZoneMonsters('beach');
+document.body.style.background=ZONE_CFG['beach'].bg;
+player.wx=BEACH_SPAWN.wx;player.wy=BEACH_SPAWN.wy;
+updateCamera();
+
+// ── Main loop ──────────────────────────────────────────────────────────────
+let frame=0;
+function loop(){
+  frame++;
+  const anyOpen=skillTreeOpen||inventoryOpen||shopOpen||questOpen||mapOpen;
+  if(!anyOpen&&transition.phase==='none'){
+    updatePlayer();updateMonsters();updateParticles();spawnZoneParticles();updateCamera();updateSubZone();
+    updateProjectiles();
+  }
+  updateTransition();
+  updateWake();
+  renderTiles();
+  renderAtmosphere();
+  renderBuildings();
+  renderGuidePath();
+  renderGates();
+  renderParticles();
+  renderMonsters();
+  renderDrops();
+  renderNPCs();
+  renderProjectiles();
+  renderPlayer();
+  renderHUD();
+  renderSkillBar();
+  renderZoneAnnounce();
+  renderTransition();
+  if(skillTreeOpen)renderSkillTree();
+  if(inventoryOpen)renderInventory();
+  if(shopOpen)renderShop();
+  if(questOpen)renderQuestLog();
+  if(mapOpen)renderMapMenu();
+  if(died)renderDied();
+  renderWake();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

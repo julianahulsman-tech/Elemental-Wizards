@@ -1,0 +1,33 @@
+# Secrets & credentials
+.env
+.env.*
+*.env
+secrets.*
+passwords.*
+config.secret.*
+credentials.*
+api-keys.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
+logs/
+
+# Node (in case you add it later)
+node_modules/
+npm-debug.log*
