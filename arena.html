@@ -4,23 +4,37 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Arena</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
   <style>
     body { margin:0; display:flex; flex-direction:column; justify-content:center; align-items:center;
-           height:100vh; background:#0a0a0a; color:#eee; font-family:Arial,sans-serif; gap:8px; }
-    #gameCanvas { border:2px solid #444; }
-    .controls { font-size:13px; display:flex; gap:60px; }
+           height:100vh; background:radial-gradient(ellipse at 50% 0%,#12060a 0%,#060308 60%,#000 100%);
+           color:#eee; font-family:'Rajdhani',Arial,sans-serif; gap:10px; }
+    #gameCanvas { border:2px solid #2a1a2a; box-shadow:0 0 40px rgba(80,0,40,0.4); }
+    .controls { font-size:13px; display:flex; gap:60px; font-family:'Rajdhani',Arial,sans-serif; letter-spacing:1px; }
+    #arenaTitle { font-family:'Cinzel',serif; font-size:13px; letter-spacing:6px; color:#443344; }
+    .subtext { font-size:11px; color:#332233; letter-spacing:2px; font-family:'Rajdhani',Arial,sans-serif; }
+    #audioRow { display:flex; gap:16px; align-items:center; }
+    #audioRow button {
+      font-size:12px; padding:5px 14px; border:1px solid #2a1a2a; border-radius:6px;
+      background:#0e080e; color:#6644aa; cursor:pointer; transition:all .15s;
+      font-family:'Rajdhani',Arial,sans-serif; letter-spacing:1px;
+    }
+    #audioRow button:hover { border-color:#6644aa; color:#cc99ff; }
+    #status { font-size:12px; color:#443355; letter-spacing:1px; }
   </style>
 </head>
 <body>
+  <div id="arenaTitle">⚔ ELEMENTAL ARENA ⚔</div>
   <div class="controls">
     <span id="lbl1"></span>
     <span id="lbl2"></span>
   </div>
-  <div style="font-size:11px;color:#555;">P1: W / S to move  |  P2: &uarr; / &darr; to move</div>
   <canvas id="gameCanvas" width="800" height="380"></canvas>
-  <div style="display:flex;gap:16px;align-items:center;">
-    <button onclick="handleAudio()" style="font-size:13px;padding:4px 12px;">Start Audio</button>
-    <span id="status" style="font-size:12px;color:#aaa;">Audio off</span>
+  <div class="subtext">P1: W / S to move &nbsp;|&nbsp; P2: ↑ / ↓ to move &nbsp;|&nbsp; R to restart</div>
+  <div id="audioRow">
+    <button onclick="handleAudio()">Start Audio</button>
+    <span id="status">Audio off</span>
   </div>
   <script>
     // ── URL params ─────────────────────────────────────────────────────────────
@@ -277,19 +291,19 @@
       ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(20,6,200,18);
       ctx.fillStyle=e1.hudFill; ctx.fillRect(20,6,200*(p1.hp/p1.max),18);
       ctx.strokeStyle=e1.hudBorder; ctx.lineWidth=1; ctx.strokeRect(20,6,200,18);
-      ctx.fillStyle='#fff'; ctx.font='12px sans-serif'; ctx.fillText(e1.icon+' '+p1.hp,26,20);
+      ctx.fillStyle='#fff'; ctx.font='bold 13px Rajdhani, sans-serif'; ctx.fillText(e1.icon+' '+p1.hp,26,20);
 
       ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(580,6,200,18);
       ctx.fillStyle=e2.hudFill; ctx.fillRect(580,6,200*(p2.hp/p2.max),18);
       ctx.strokeStyle=e2.hudBorder; ctx.lineWidth=1; ctx.strokeRect(580,6,200,18);
-      ctx.fillStyle='#fff'; ctx.font='12px sans-serif'; ctx.fillText(e2.icon+' '+p2.hp,586,20);
+      ctx.fillStyle='#fff'; ctx.font='bold 13px Rajdhani, sans-serif'; ctx.fillText(e2.icon+' '+p2.hp,586,20);
     }
 
     function drawOver() {
-      ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(0,0,W,H);
-      ctx.fillStyle='#fff'; ctx.font='bold 42px sans-serif'; ctx.textAlign='center';
+      ctx.fillStyle='rgba(0,0,0,0.72)'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#fff'; ctx.font='900 46px Cinzel, serif'; ctx.textAlign='center';
       ctx.fillText(winner+' wins!',W/2,H/2-10);
-      ctx.font='17px sans-serif'; ctx.fillText('Press R to restart',W/2,H/2+28);
+      ctx.font='16px Rajdhani, sans-serif'; ctx.fillText('Press R to restart',W/2,H/2+30);
       ctx.textAlign='left';
     }
 
