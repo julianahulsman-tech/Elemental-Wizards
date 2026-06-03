@@ -944,7 +944,7 @@ let zoneAnnounce={name:'',color:'#fff',timer:0};
 const transition={phase:'none',timer:0,next:''};// phase: none|out|in
 let townBossDefeated=false;
 let wakeState='sleeping'; // sleeping|waking|playing
-let wakeTimer=0,wakeMessageTimer=0,wakeMessage='';
+let wakeTimer=0,wakeMessageTimer=0,wakeMessage='',wakeLandTimer=0;
 const barrelObjs=[{wx:-60,wy:31*TS-12,vx:1.6,landed:false},{wx:-110,wy:32*TS+8,vx:1.3,landed:false}];
 const groundDrops=[];
 const projectiles=[]; // skill gem effects
@@ -2608,10 +2608,11 @@ function updateWake(){
       const sg={1:'water_gem', 2:'fire_gem',  3:'elec_gem',   4:'ice_gem' }[playerElement];
       equipItem(sw);equipItem(sg);
       wakeMessage=`Found: ${ITEMS[sw].name} & ${ITEMS[sg].name}`;
-      wakeMessageTimer=220;wakeState='playing';
+      wakeMessageTimer=220;wakeLandTimer=70;wakeState='playing';
     }
   }
   if(wakeMessageTimer>0)wakeMessageTimer--;
+  if(wakeLandTimer>0)wakeLandTimer--;
 }
 
 function renderDrops(){
@@ -2631,6 +2632,29 @@ function renderDrops(){
 
 function renderWake(){
   if(wakeState==='playing'){
+    // Fade-out barrels + awakening flash while wakeLandTimer counts down
+    if(wakeLandTimer>0){
+      const bf=wakeLandTimer/70;
+      barrelObjs.forEach(b=>{
+        const sx=b.wx-camera.x,sy=b.wy-camera.y;
+        ctx.save();ctx.globalAlpha=bf;
+        ctx.fillStyle='#8B6914';ctx.fillRect(sx-10,sy-14,20,28);
+        ctx.strokeStyle='#5a4010';ctx.lineWidth=2;ctx.strokeRect(sx-10,sy-14,20,28);
+        ctx.strokeStyle='#3a2808';ctx.lineWidth=3;
+        ctx.beginPath();ctx.moveTo(sx-12,sy-5);ctx.lineTo(sx+12,sy-5);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(sx-12,sy+5);ctx.lineTo(sx+12,sy+5);ctx.stroke();
+        ctx.restore();
+      });
+      // Awakening ring flash centered on player
+      const px=player.wx-camera.x,py=player.wy-camera.y;
+      const ringR=16+(1-bf)*60;
+      ctx.save();ctx.globalAlpha=bf*0.8;
+      ctx.strokeStyle=PEL.orb;ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(px,py,ringR,0,Math.PI*2);ctx.stroke();
+      ctx.globalAlpha=bf*0.35;ctx.strokeStyle='#fff';ctx.lineWidth=6;
+      ctx.beginPath();ctx.arc(px,py,ringR*0.65,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+    }
     if(wakeMessageTimer>0){
       const a=Math.min(1,wakeMessageTimer/30);
       ctx.save();ctx.globalAlpha=a;ctx.font='bold 13px Arial';
