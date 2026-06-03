@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: elemental-wizards
+    env: static
+    staticPublishPath: .
+    buildCommand: ""
