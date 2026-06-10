@@ -943,9 +943,7 @@ let enteredFromZone=null;
 let zoneAnnounce={name:'',color:'#fff',timer:0};
 const transition={phase:'none',timer:0,next:''};// phase: none|out|in
 let townBossDefeated=false;
-let wakeState='sleeping'; // sleeping|waking|playing
-let wakeTimer=0,wakeMessageTimer=0,wakeMessage='',wakeLandTimer=0;
-const barrelObjs=[{wx:46,wy:31*TS-12,vx:6,landed:false},{wx:16,wy:32*TS+8,vx:5,landed:false}];
+let wakeState='playing'; // always playing now — no barrel sequence
 const groundDrops=[];
 const projectiles=[]; // skill gem effects
 let lockedMsgTimer=0,lockedMsgText='',regenTick=0;
@@ -1039,9 +1037,8 @@ let invSlotRects=[],bagItemRects=[],shopItemRects=[],questClaimRects=[];
 
 window.addEventListener('keydown',e=>{
   keys[e.key]=true;
-  if(wakeState==='sleeping'){wakeState='waking';wakeTimer=0;return;}
+  // Barrel animation removed
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.key))e.preventDefault();
-  if(wakeState==='waking') return; // don't open menus or trigger actions during barrel animation
   if(e.key==='Tab'){
     skillTreeOpen=!skillTreeOpen;inventoryOpen=shopOpen=questOpen=mapOpen=false;
     if(skillTreeOpen){const sn=stNodes.find(n=>n.id===START_NODE[playerElement]);if(sn){stView.x=sn.x;stView.y=sn.y;stView.zoom=0.75;}}
@@ -2596,24 +2593,7 @@ function renderDied(){
 
 // ── Wake-up / barrel sequence ──────────────────────────────────────────────
 function updateWake(){
-  if(wakeState==='sleeping')return;
-  if(wakeState==='waking'){
-    wakeTimer++;
-    barrelObjs.forEach(b=>{
-      if(b.landed)return;
-      b.wx+=b.vx;
-      if(b.wx>=16*TS){b.wx=16*TS+(b===barrelObjs[0]?0:TS);b.landed=true;}
-    });
-    if(barrelObjs.every(b=>b.landed)&&wakeTimer>60){
-      const sw={1:'tide_staff',2:'fire_wand',3:'thunder_rod',4:'ice_wand'}[playerElement];
-      const sg={1:'water_gem', 2:'fire_gem',  3:'elec_gem',   4:'ice_gem' }[playerElement];
-      equipItem(sw);equipItem(sg);
-      wakeMessage=`✦ ${ITEMS[sw].name} & ${ITEMS[sg].name} equipped — Use WASD to move!`;
-      wakeMessageTimer=280;wakeLandTimer=70;wakeState='playing';
-    }
-  }
-  if(wakeMessageTimer>0)wakeMessageTimer--;
-  if(wakeLandTimer>0)wakeLandTimer--;
+  // Barrel animation completely removed
 }
 
 function renderDrops(){
@@ -2632,75 +2612,7 @@ function renderDrops(){
 }
 
 function renderWake(){
-  if(wakeState==='playing'){
-    // Fade-out barrels + awakening flash while wakeLandTimer counts down
-    if(wakeLandTimer>0){
-      const bf=wakeLandTimer/70;
-      barrelObjs.forEach(b=>{
-        const sx=b.wx-camera.x,sy=b.wy-camera.y;
-        ctx.save();ctx.globalAlpha=bf;
-        ctx.fillStyle='#8B6914';ctx.fillRect(sx-10,sy-14,20,28);
-        ctx.strokeStyle='#5a4010';ctx.lineWidth=2;ctx.strokeRect(sx-10,sy-14,20,28);
-        ctx.strokeStyle='#3a2808';ctx.lineWidth=3;
-        ctx.beginPath();ctx.moveTo(sx-12,sy-5);ctx.lineTo(sx+12,sy-5);ctx.stroke();
-        ctx.beginPath();ctx.moveTo(sx-12,sy+5);ctx.lineTo(sx+12,sy+5);ctx.stroke();
-        ctx.restore();
-      });
-      // Awakening ring flash centered on player
-      const px=player.wx-camera.x,py=player.wy-camera.y;
-      const ringR=16+(1-bf)*60;
-      ctx.save();ctx.globalAlpha=bf*0.8;
-      ctx.strokeStyle=PEL.orb;ctx.lineWidth=3;
-      ctx.beginPath();ctx.arc(px,py,ringR,0,Math.PI*2);ctx.stroke();
-      ctx.globalAlpha=bf*0.35;ctx.strokeStyle='#fff';ctx.lineWidth=6;
-      ctx.beginPath();ctx.arc(px,py,ringR*0.65,0,Math.PI*2);ctx.stroke();
-      ctx.restore();
-    }
-    if(wakeMessageTimer>0){
-      const a=Math.min(1,wakeMessageTimer/30)*Math.min(1,(280-wakeMessageTimer)/10+0.1);
-      ctx.save();ctx.globalAlpha=a;ctx.font='bold 15px "Rajdhani",Arial';
-      const tw=ctx.measureText(wakeMessage).width+40;
-      ctx.fillStyle='rgba(0,0,0,0.88)';roundRect(ctx,(VW-tw)/2,VH-106,tw,38,8);ctx.fill();
-      ctx.strokeStyle=PEL.orb;ctx.lineWidth=1.5;roundRect(ctx,(VW-tw)/2,VH-106,tw,38,8);ctx.stroke();
-      ctx.fillStyle='#ffe080';ctx.textAlign='center';ctx.fillText(wakeMessage,VW/2,VH-82);
-      ctx.textAlign='left';ctx.restore();
-    }
-    // When animations complete, re-render player so they're not hidden
-    if(wakeLandTimer<=0&&wakeMessageTimer<=0){
-      renderPlayer();
-    }
-    return;
-  }
-  if(wakeState==='sleeping'){
-    ctx.fillStyle='rgba(0,0,0,0.96)';ctx.fillRect(0,0,VW,VH);
-    // title glow
-    ctx.save();ctx.shadowColor='rgba(90,160,220,0.7)';ctx.shadowBlur=18;
-    ctx.fillStyle='#8ab4d8';ctx.font='bold 30px "Cinzel",serif';ctx.textAlign='center';
-    ctx.fillText('You are washed ashore...',VW/2,VH/2-40);ctx.restore();
-    ctx.font='16px "Rajdhani",Arial';ctx.fillStyle='#cccccc';ctx.textAlign='center';
-    ctx.fillText(`${playerName}  —  ${PEL.name} Mage`,VW/2,VH/2+2);
-    ctx.save();ctx.globalAlpha=0.5+0.5*Math.sin(frame*0.07);
-    ctx.fillStyle='#aaaaaa';ctx.font='13px "Rajdhani",Arial';
-    ctx.fillText('Press any key to wake up',VW/2,VH/2+44);
-    ctx.restore();ctx.textAlign='left';return;
-  }
-  // waking: fade overlay out while barrels float in
-  const fadeA=Math.max(0,0.94-(wakeTimer/25));
-  if(fadeA>0){ctx.save();ctx.globalAlpha=fadeA;ctx.fillStyle='rgba(0,0,0,0.94)';ctx.fillRect(0,0,VW,VH);ctx.restore();}
-  // Player spotlight so they are easy to spot on the sand
-  const spx=player.wx-camera.x,spy=player.wy-camera.y;
-  const sg2=ctx.createRadialGradient(spx,spy,0,spx,spy,48);
-  sg2.addColorStop(0,`rgba(255,255,200,${0.55*(1-fadeA)})`);sg2.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.beginPath();ctx.arc(spx,spy,48,0,Math.PI*2);ctx.fillStyle=sg2;ctx.fill();
-  barrelObjs.forEach(b=>{
-    const sx=b.wx-camera.x,sy=b.wy-camera.y;
-    if(sx<-40||sx>VW+40)return;
-    ctx.fillStyle='#8B6914';ctx.fillRect(sx-10,sy-14,20,28);
-    ctx.strokeStyle='#5a4010';ctx.lineWidth=2;ctx.strokeRect(sx-10,sy-14,20,28);
-    ctx.strokeStyle='#3a2808';ctx.lineWidth=3;
-    ctx.beginPath();ctx.moveTo(sx-12,sy-5);ctx.lineTo(sx+12,sy-5);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(sx-12,sy+5);ctx.lineTo(sx+12,sy+5);ctx.stroke();
-  });
+  // Barrel animation completely removed
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
