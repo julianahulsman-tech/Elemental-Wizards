@@ -47,7 +47,7 @@
     }
     .loginInput:focus{border-color:#3a5a88;}
     .loginInput::placeholder{color:#223344;}
-    #loginError{font-size:12px;color:#e05050;min-height:16px;text-align:center;}
+    #loginError{font-size:13px;font-weight:700;color:#ff6060;text-align:center;background:rgba(200,0,0,0.18);border-radius:4px;padding:6px 10px;letter-spacing:.5px;display:none;border:1px solid rgba(255,80,80,0.3);}
     #submitBtn{
       padding:11px;font-size:13px;font-weight:700;letter-spacing:3px;
       border:none;border-radius:8px;
@@ -258,10 +258,14 @@ function setTab(m){
   document.getElementById('tabLogin').classList.toggle('active',m==='login');
   document.getElementById('tabReg').classList.toggle('active',m==='register');
   document.getElementById('submitBtn').textContent=m==='login'?'LOGIN':'REGISTER';
-  document.getElementById('loginError').textContent='';
+  setError('');
   document.getElementById('pwInput').autocomplete=m==='login'?'current-password':'new-password';
 }
-function setError(msg){ document.getElementById('loginError').textContent=msg; }
+function setError(msg){
+  const el=document.getElementById('loginError');
+  el.textContent=msg;
+  el.style.display=msg?'block':'none';
+}
 
 async function submitAuth(){
   const un=document.getElementById('unInput').value.trim();
@@ -278,16 +282,24 @@ async function submitAuth(){
 
   if(authMode==='register'){
     if(users[un.toLowerCase()]){ setError('Username already taken.'); btn.disabled=false; setTab('register'); return; }
-    const salt=randomSaltHex(), hash=await pbkdf2Hash(pw,salt);
-    users[un.toLowerCase()]={ display:un, salt, hash, element:null };
-    saveUsers(users);
-    afterLogin(un);
+    try {
+      const salt=randomSaltHex(), hash=await pbkdf2Hash(pw,salt);
+      users[un.toLowerCase()]={ display:un, salt, hash, element:null };
+      saveUsers(users);
+      afterLogin(un);
+    } catch(err) {
+      setError('Registration failed. Try again.'); btn.disabled=false; btn.textContent='REGISTER';
+    }
   } else {
     const rec=users[un.toLowerCase()];
     if(!rec){ setError('No account found. Register first.'); btn.disabled=false; btn.textContent='LOGIN'; return; }
-    const hash=await pbkdf2Hash(pw,rec.salt);
-    if(hash!==rec.hash){ setError('Wrong password.'); btn.disabled=false; btn.textContent='LOGIN'; return; }
-    afterLogin(rec.display||un);
+    try {
+      const hash=await pbkdf2Hash(pw,rec.salt);
+      if(hash!==rec.hash){ setError('Wrong password.'); btn.disabled=false; btn.textContent='LOGIN'; return; }
+      afterLogin(rec.display||un);
+    } catch(err) {
+      setError('Wrong password.'); btn.disabled=false; btn.textContent='LOGIN';
+    }
   }
 }
 
@@ -300,13 +312,8 @@ function afterLogin(username){
   document.getElementById('userDisplay').textContent=username;
   document.getElementById('userBar').classList.add('show');
 
-  // If they already have a saved element + name, go straight to the world
   const users=getUsers();
   const rec=users[username.toLowerCase()];
-  if(rec && rec.element && rec.wizardName){
-    window.location.href='world.html?p='+rec.element+'&name='+encodeURIComponent(rec.wizardName);
-    return;
-  }
   showPanel('pickScreen');
   if(rec && rec.element){ chosenEl=rec.element; }
   if(rec && rec.wizardName){ document.getElementById('nameInput').value=rec.wizardName; }
@@ -371,7 +378,7 @@ function goWorld(){
   const users=getUsers();
   const key=currentUser?currentUser.toLowerCase():null;
   if(key && users[key]){ users[key].element=chosenEl; users[key].wizardName=name; saveUsers(users); }
-  window.location.href='world.html?p='+chosenEl+'&name='+encodeURIComponent(name);
+  window.location.href='world?p='+chosenEl+'&name='+encodeURIComponent(name);
 }
 
 // ── Arena (optional) ──────────────────────────────────────────────────────────
@@ -430,6 +437,21 @@ function fight(){ if(arenaS1&&arenaS2) window.location.href='arena.html?p1='+are
   window.addEventListener('resize',resize);
   init();draw();
 })();
+</script>
+<script src="/save-progress.js"></script>
+<script>
+  async function persistProgress(){
+    try{
+      const user = sessionStorage.getItem('ew_user');
+      if(!user || !window.EWProgress) return;
+      const key = user.toLowerCase();
+      const data = { users: getUsers(), timestamp: Date.now() };
+      await EWProgress.saveProgress(key, data);
+      console.log('EW progress saved');
+    }catch(e){ console.warn('EW progress save failed', e); }
+  }
+  window.addEventListener('beforeunload', persistProgress);
+  window.saveEWProgress = persistProgress;
 </script>
 </body>
 </html>

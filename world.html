@@ -945,7 +945,7 @@ const transition={phase:'none',timer:0,next:''};// phase: none|out|in
 let townBossDefeated=false;
 let wakeState='sleeping'; // sleeping|waking|playing
 let wakeTimer=0,wakeMessageTimer=0,wakeMessage='',wakeLandTimer=0;
-const barrelObjs=[{wx:-60,wy:31*TS-12,vx:1.6,landed:false},{wx:-110,wy:32*TS+8,vx:1.3,landed:false}];
+const barrelObjs=[{wx:46,wy:31*TS-12,vx:6,landed:false},{wx:16,wy:32*TS+8,vx:5,landed:false}];
 const groundDrops=[];
 const projectiles=[]; // skill gem effects
 let lockedMsgTimer=0,lockedMsgText='',regenTick=0;
@@ -1041,6 +1041,7 @@ window.addEventListener('keydown',e=>{
   keys[e.key]=true;
   if(wakeState==='sleeping'){wakeState='waking';wakeTimer=0;return;}
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.key))e.preventDefault();
+  if(wakeState==='waking') return; // don't open menus or trigger actions during barrel animation
   if(e.key==='Tab'){
     skillTreeOpen=!skillTreeOpen;inventoryOpen=shopOpen=questOpen=mapOpen=false;
     if(skillTreeOpen){const sn=stNodes.find(n=>n.id===START_NODE[playerElement]);if(sn){stView.x=sn.x;stView.y=sn.y;stView.zoom=0.75;}}
@@ -2607,8 +2608,8 @@ function updateWake(){
       const sw={1:'tide_staff',2:'fire_wand',3:'thunder_rod',4:'ice_wand'}[playerElement];
       const sg={1:'water_gem', 2:'fire_gem',  3:'elec_gem',   4:'ice_gem' }[playerElement];
       equipItem(sw);equipItem(sg);
-      wakeMessage=`Found: ${ITEMS[sw].name} & ${ITEMS[sg].name}`;
-      wakeMessageTimer=220;wakeLandTimer=70;wakeState='playing';
+      wakeMessage=`✦ ${ITEMS[sw].name} & ${ITEMS[sg].name} equipped — Use WASD to move!`;
+      wakeMessageTimer=280;wakeLandTimer=70;wakeState='playing';
     }
   }
   if(wakeMessageTimer>0)wakeMessageTimer--;
@@ -2656,12 +2657,12 @@ function renderWake(){
       ctx.restore();
     }
     if(wakeMessageTimer>0){
-      const a=Math.min(1,wakeMessageTimer/30);
-      ctx.save();ctx.globalAlpha=a;ctx.font='bold 13px Arial';
-      const tw=ctx.measureText(wakeMessage).width+32;
-      ctx.fillStyle='rgba(0,0,0,0.84)';roundRect(ctx,(VW-tw)/2,VH-92,tw,28,6);ctx.fill();
-      ctx.strokeStyle='#ffe080';ctx.lineWidth=1;roundRect(ctx,(VW-tw)/2,VH-92,tw,28,6);ctx.stroke();
-      ctx.fillStyle='#ffe080';ctx.textAlign='center';ctx.fillText(wakeMessage,VW/2,VH-72);
+      const a=Math.min(1,wakeMessageTimer/30)*Math.min(1,(280-wakeMessageTimer)/10+0.1);
+      ctx.save();ctx.globalAlpha=a;ctx.font='bold 15px "Rajdhani",Arial';
+      const tw=ctx.measureText(wakeMessage).width+40;
+      ctx.fillStyle='rgba(0,0,0,0.88)';roundRect(ctx,(VW-tw)/2,VH-106,tw,38,8);ctx.fill();
+      ctx.strokeStyle=PEL.orb;ctx.lineWidth=1.5;roundRect(ctx,(VW-tw)/2,VH-106,tw,38,8);ctx.stroke();
+      ctx.fillStyle='#ffe080';ctx.textAlign='center';ctx.fillText(wakeMessage,VW/2,VH-82);
       ctx.textAlign='left';ctx.restore();
     }
     return;
@@ -2680,8 +2681,13 @@ function renderWake(){
     ctx.restore();ctx.textAlign='left';return;
   }
   // waking: fade overlay out while barrels float in
-  const fadeA=Math.max(0,0.94-(wakeTimer/45));
+  const fadeA=Math.max(0,0.94-(wakeTimer/25));
   if(fadeA>0){ctx.save();ctx.globalAlpha=fadeA;ctx.fillStyle='rgba(0,0,0,0.94)';ctx.fillRect(0,0,VW,VH);ctx.restore();}
+  // Player spotlight so they are easy to spot on the sand
+  const spx=player.wx-camera.x,spy=player.wy-camera.y;
+  const sg2=ctx.createRadialGradient(spx,spy,0,spx,spy,48);
+  sg2.addColorStop(0,`rgba(255,255,200,${0.55*(1-fadeA)})`);sg2.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath();ctx.arc(spx,spy,48,0,Math.PI*2);ctx.fillStyle=sg2;ctx.fill();
   barrelObjs.forEach(b=>{
     const sx=b.wx-camera.x,sy=b.wy-camera.y;
     if(sx<-40||sx>VW+40)return;
