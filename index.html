@@ -452,6 +452,7 @@ function fight(){ if(arenaS1&&arenaS2) window.location.href='arena.html?p1='+are
 </script>
 <script src="/save-progress.js"></script>
 <script src="/characters.js"></script>
+<script src="/friends.js"></script>
 <script>
   async function persistProgress(){
     try{
@@ -506,6 +507,118 @@ function fight(){ if(arenaS1&&arenaS2) window.location.href='arena.html?p1='+are
 
   // load characters when logged in
   async function loadCharactersOnLogin(){ renderCharacters(); }
+</script>
+
+<!-- Friends Modal -->
+<div id="friendsModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:linear-gradient(160deg,#0e1520,#0a0f18);border:1px solid #1e2a3a;border-radius:14px;padding:20px;width:90%;max-width:400px;box-shadow:0 0 40px rgba(0,40,100,0.5);color:#eee;font-family:'Rajdhani',Arial,sans-serif;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <h2 style="font-family:'Cinzel',serif;font-size:18px;letter-spacing:3px;">FRIENDS</h2>
+    <button onclick="closeFriendsModal()" style="border:none;background:none;color:#666;font-size:20px;cursor:pointer;">✕</button>
+  </div>
+  <div id="friendsContent" style="max-height:400px;overflow-y:auto;">
+    Loading...
+  </div>
+  <div style="margin-top:12px;display:flex;gap:8px;">
+    <input id="friendInviteInput" type="text" placeholder="Friend username" style="flex:1;background:#080e18;border:1px solid #1e2a40;border-radius:6px;color:#ddeeff;padding:8px 10px;font-family:'Rajdhani',Arial,sans-serif;" />
+    <button onclick="inviteFriend()" style="padding:8px 14px;border-radius:6px;border:none;background:#113044;color:#cfefff;cursor:pointer;font-family:'Rajdhani',Arial,sans-serif;">Invite</button>
+  </div>
+</div>
+
+<!-- Friends modal overlay -->
+<div id="friendsOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9998;" onclick="closeFriendsModal()"></div>
+
+<script>
+  function openFriendsModal(){
+    document.getElementById('friendsModal').style.display='block';
+    document.getElementById('friendsOverlay').style.display='block';
+    loadAndRenderFriends();
+  }
+
+  function closeFriendsModal(){
+    document.getElementById('friendsModal').style.display='none';
+    document.getElementById('friendsOverlay').style.display='none';
+  }
+
+  async function loadAndRenderFriends(){
+    try{
+      const user = sessionStorage.getItem('ew_user');
+      if(!user || !window.EWFriends) return;
+      const data = await EWFriends.getFriends(user.toLowerCase());
+      const content = document.getElementById('friendsContent');
+      let html = '';
+      
+      if(data.list && data.list.length > 0){
+        html += '<div style="margin-bottom:14px;"><div style="font-size:12px;color:#8899;margin-bottom:6px;">FRIENDS</div>';
+        data.list.forEach(f => {
+          html += '<div style="padding:6px;background:#081218;border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;"><span>'+f+'</span><button onclick="removeFriendUI(\''+f+'\')" style="border:none;background:none;color:#f66;cursor:pointer;font-size:12px;">Remove</button></div>';
+        });
+        html += '</div>';
+      }
+      
+      if(data.pending && data.pending.length > 0){
+        html += '<div><div style="font-size:12px;color:#8899;margin-bottom:6px;">PENDING REQUESTS</div>';
+        data.pending.forEach(p => {
+          html += '<div style="padding:6px;background:#081218;border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;"><span>'+p+'</span><div><button onclick="acceptFriendUI(\''+p+'\')" style="border:none;background:none;color:#6f6;cursor:pointer;font-size:12px;margin-right:8px;">Accept</button><button onclick="declineFriendUI(\''+p+'\')" style="border:none;background:none;color:#f66;cursor:pointer;font-size:12px;">Decline</button></div></div>';
+        });
+        html += '</div>';
+      }
+      
+      if(!data.list?.length && !data.pending?.length){
+        html = '<div style="color:#666;text-align:center;padding:20px;">No friends yet</div>';
+      }
+      
+      content.innerHTML = html;
+    }catch(e){ console.warn(e); }
+  }
+
+  async function inviteFriend(){
+    try{
+      const user = sessionStorage.getItem('ew_user');
+      const input = document.getElementById('friendInviteInput').value.trim();
+      if(!user || !input) return alert('Enter a username');
+      if(!window.EWFriends) return alert('Friends not loaded');
+      const ok = await EWFriends.sendFriendRequest(user.toLowerCase(), input);
+      if(ok){
+        document.getElementById('friendInviteInput').value = '';
+        loadAndRenderFriends();
+      }
+    }catch(e){ alert('Invite failed'); }
+  }
+
+  async function acceptFriendUI(from){
+    try{
+      const user = sessionStorage.getItem('ew_user');
+      if(!window.EWFriends) return;
+      const ok = await EWFriends.acceptFriendRequest(user.toLowerCase(), from);
+      if(ok) loadAndRenderFriends();
+    }catch(e){ alert('Accept failed'); }
+  }
+
+  async function declineFriendUI(from){
+    try{
+      const user = sessionStorage.getItem('ew_user');
+      if(!window.EWFriends) return;
+      const ok = await EWFriends.declineFriendRequest(user.toLowerCase(), from);
+      if(ok) loadAndRenderFriends();
+    }catch(e){ alert('Decline failed'); }
+  }
+
+  async function removeFriendUI(friend){
+    try{
+      const user = sessionStorage.getItem('ew_user');
+      if(!window.EWFriends || !confirm('Remove '+friend+'?')) return;
+      const ok = await EWFriends.removeFriend(user.toLowerCase(), friend);
+      if(ok) loadAndRenderFriends();
+    }catch(e){ alert('Remove failed'); }
+  }
+
+  // F key listener for friends modal
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'f' || e.key === 'F'){
+      e.preventDefault();
+      openFriendsModal();
+    }
+  });
 </script>
 </body>
 </html>
