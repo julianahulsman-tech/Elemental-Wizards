@@ -10,9 +10,11 @@ app.use(bodyParser.json({ limit: '1mb' }));
 
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'progress.json');
+const CHAR_FILE = path.join(DATA_DIR, 'characters.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({}), 'utf8');
+if (!fs.existsSync(CHAR_FILE)) fs.writeFileSync(CHAR_FILE, JSON.stringify({}), 'utf8');
 
 function readDB(){
   try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8') || '{}'); }
@@ -21,6 +23,15 @@ function readDB(){
 
 function writeDB(obj){
   fs.writeFileSync(DB_FILE, JSON.stringify(obj, null, 2), 'utf8');
+}
+
+function readChars(){
+  try { return JSON.parse(fs.readFileSync(CHAR_FILE, 'utf8') || '{}'); }
+  catch(e){ return {}; }
+}
+
+function writeChars(obj){
+  fs.writeFileSync(CHAR_FILE, JSON.stringify(obj, null, 2), 'utf8');
 }
 
 // Serve the existing static site so client can call relative paths
@@ -44,10 +55,76 @@ app.get('/api/progress/:id', (req, res) => {
   return res.json(db[id]);
 });
 
+// --- Character endpoints --------------------------------------------------
+// List characters for a user
+app.get('/api/characters/:user', (req, res) => {
+  const user = req.params.user.toLowerCase();
+  const chars = readChars();
+  return res.json({ characters: chars[user] || [] });
+});
+
+// Create a character for a user
+app.post('/api/characters/:user', (req, res) => {
+  const user = req.params.user.toLowerCase();
+  const body = req.body || {};
+  if (!body.name) return res.status(400).json({ error: 'missing name' });
+  const chars = readChars();
+  const id = Date.now().toString(36) + '-' + Math.floor(Math.random()*10000).toString(36);
+  const rec = { id, name: body.name, element: body.element || null, data: body.data || {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  chars[user] = chars[user] || [];
+  chars[user].push(rec);
+  try { writeChars(chars); return res.json(rec); } catch(e){ return res.status(500).json({ error: 'write failed' }); }
+});
+
+// Get a single character
+app.get('/api/characters/:user/:id', (req, res) => {
+  const user = req.params.user.toLowerCase();
+  const id = req.params.id;
+  const chars = readChars();
+  const list = chars[user] || [];
+  const found = list.find(c=>c.id===id);
+  if(!found) return res.status(404).json({ error: 'not found' });
+  return res.json(found);
+});
+
+// Update a character
+app.put('/api/characters/:user/:id', (req, res) => {
+  const user = req.params.user.toLowerCase();
+  const id = req.params.id;
+  const body = req.body || {};
+  const chars = readChars();
+  const list = chars[user] || [];
+  const idx = list.findIndex(c=>c.id===id);
+  if(idx<0) return res.status(404).json({ error: 'not found' });
+  const updated = Object.assign({}, list[idx], body, { updatedAt: new Date().toISOString() });
+  list[idx] = updated;
+  chars[user] = list;
+  try { writeChars(chars); return res.json(updated); } catch(e){ return res.status(500).json({ error: 'write failed' }); }
+});
+
+// Delete a character
+app.delete('/api/characters/:user/:id', (req, res) => {
+  const user = req.params.user.toLowerCase();
+  const id = req.params.id;
+  const chars = readChars();
+  const list = chars[user] || [];
+  const idx = list.findIndex(c=>c.id===id);
+  if(idx<0) return res.status(404).json({ error: 'not found' });
+  list.splice(idx,1);
+  chars[user]=list;
+  try{ writeChars(chars); return res.json({ ok:true }); }catch(e){ return res.status(500).json({ error: 'write failed' }); }
+});
+
 // Serve small client helper file
 app.get('/save-progress.js', (req, res) => {
   res.type('application/javascript');
   res.sendFile(path.join(__dirname, 'public', 'save-progress.js'));
+});
+
+// Serve characters helper
+app.get('/characters.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'public', 'characters.js'));
 });
 
 app.listen(PORT, () => console.log(`Elemental Wizards backend listening on http://localhost:${PORT}`));

@@ -213,6 +213,15 @@
            oninput="updateWorldBtn()" onkeydown="if(event.key==='Enter')goWorld()"/>
   </div>
 
+  <div id="charSection" style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+    <div style="font-size:11px;color:#334455;letter-spacing:3px;">CHARACTERS</div>
+    <div id="charList" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;"></div>
+    <div style="display:flex;gap:8px;">
+      <button id="newCharBtn" onclick="createNewCharacter()" style="padding:8px 12px;border-radius:6px;border:none;background:#113044;color:#cfefff;">New Character</button>
+      <button id="refreshCharsBtn" onclick="renderCharacters()" style="padding:8px 12px;border-radius:6px;border:1px solid #223344;background:#071118;color:#88b;">Refresh</button>
+    </div>
+  </div>
+
   <button id="enterWorldBtn" onclick="goWorld()">ENTER WORLD</button>
 
   <button id="arenaToggle" onclick="toggleArena()">⚔ ARENA MODE (optional)</button>
@@ -320,6 +329,7 @@ function afterLogin(username){
   buildBigCards();
   buildArenaCards();
   updateWorldBtn();
+  if(window.EWCharacters) loadCharactersOnLogin();
 }
 
 function logout(){
@@ -378,7 +388,9 @@ function goWorld(){
   const users=getUsers();
   const key=currentUser?currentUser.toLowerCase():null;
   if(key && users[key]){ users[key].element=chosenEl; users[key].wizardName=name; saveUsers(users); }
-  window.location.href='world?p='+chosenEl+'&name='+encodeURIComponent(name);
+  const char = sessionStorage.getItem('ew_char');
+  const extra = char ? ('&char='+encodeURIComponent(char)) : '';
+  window.location.href='world?p='+chosenEl+'&name='+encodeURIComponent(name)+extra;
 }
 
 // ── Arena (optional) ──────────────────────────────────────────────────────────
@@ -439,6 +451,7 @@ function fight(){ if(arenaS1&&arenaS2) window.location.href='arena.html?p1='+are
 })();
 </script>
 <script src="/save-progress.js"></script>
+<script src="/characters.js"></script>
 <script>
   async function persistProgress(){
     try{
@@ -452,6 +465,47 @@ function fight(){ if(arenaS1&&arenaS2) window.location.href='arena.html?p1='+are
   }
   window.addEventListener('beforeunload', persistProgress);
   window.saveEWProgress = persistProgress;
+</script>
+<script>
+  async function renderCharacters(){
+    try{
+      const user = sessionStorage.getItem('ew_user');
+      if(!user || !window.EWCharacters) return;
+      const list = await EWCharacters.listCharacters(user.toLowerCase());
+      const el = document.getElementById('charList'); el.innerHTML='';
+      list.forEach(c=>{
+        const b=document.createElement('button');
+        b.textContent=c.name + (c.element?(' ('+c.element+')'):'');
+        b.style.padding='8px 10px'; b.style.borderRadius='6px'; b.style.border='1px solid #223344'; b.style.background='#081218'; b.style.color='#cfefff';
+        b.onclick=()=>{ selectCharacter(c); };
+        el.appendChild(b);
+      });
+      if(list.length===0) el.textContent='No characters yet';
+    }catch(e){ console.warn(e); }
+  }
+
+  async function createNewCharacter(){
+    const user = sessionStorage.getItem('ew_user'); if(!user) return alert('Login first');
+    const name = prompt('Character name:'); if(!name) return;
+    const elChoice = chosenEl || 1;
+    try{
+      const rec = await EWCharacters.createCharacter(user.toLowerCase(), { name, element: elChoice });
+      sessionStorage.setItem('ew_char', rec.id);
+      document.getElementById('nameInput').value = rec.name;
+      chosenEl = rec.element;
+      buildBigCards(); updateWorldBtn(); renderCharacters();
+    }catch(e){ alert('Create failed'); }
+  }
+
+  async function selectCharacter(c){
+    sessionStorage.setItem('ew_char', c.id);
+    document.getElementById('nameInput').value = c.name || document.getElementById('nameInput').value;
+    chosenEl = c.element || chosenEl;
+    buildBigCards(); updateWorldBtn();
+  }
+
+  // load characters when logged in
+  async function loadCharactersOnLogin(){ renderCharacters(); }
 </script>
 </body>
 </html>
