@@ -2665,6 +2665,10 @@ function renderWake(){
       ctx.fillStyle='#ffe080';ctx.textAlign='center';ctx.fillText(wakeMessage,VW/2,VH-82);
       ctx.textAlign='left';ctx.restore();
     }
+    // When animations complete, re-render player so they're not hidden
+    if(wakeLandTimer<=0&&wakeMessageTimer<=0){
+      renderPlayer();
+    }
     return;
   }
   if(wakeState==='sleeping'){
