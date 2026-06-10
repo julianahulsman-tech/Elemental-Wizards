@@ -1,6 +1,6 @@
 services:
   - type: web
     name: elemental-wizards
-    env: static
-    staticPublishPath: .
+    env: docker
+    dockerfilePath: Dockerfile
     buildCommand: ""
