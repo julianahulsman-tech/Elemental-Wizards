@@ -14,11 +14,13 @@
 </head>
 <body>
 <canvas id="c"></canvas>
+<script src="/save-progress.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
-const playerElement = parseInt(params.get('p')) || 2;
-const playerName = decodeURIComponent(params.get('name') || 'Mage');
-if (![1,2,3,4].includes(playerElement)) location.href = 'index.html';
+const playerElement = parseInt(params.get('p')) || 2; // fallback only while redirecting
+const playerName = (params.get('name')||'').trim() || 'Mage';
+if (![1,2,3,4].includes(parseInt(params.get('p'))) || !(params.get('name')||'').trim())
+  location.href = 'index.html';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -679,6 +681,19 @@ const MAPS_PORTAL={wx:31*TS+TS/2,wy:18*TS+TS/2,label:'Map Portal',color:'#ffdd44
 // Return-to-town spawn positions per act
 const ACT_TOWN_RETURN={1:{wx:31*TS+TS/2,wy:54*TS},2:{wx:55*TS+TS/2,wy:31*TS},3:{wx:7*TS+TS/2,wy:31*TS},4:{wx:32*TS+TS/2,wy:10*TS}};
 
+// Guide-path data for boss arenas: entry→boss waypoints per boss zone.
+// Coordinates mirror the boss spawn logic in spawnZoneMonsters().
+const ACT_BOSS_DATA={};
+CAMPAIGN.filter(z=>z.boss).forEach(z=>{
+  const beach=z.biome==='beach';
+  ACT_BOSS_DATA[z.id]={
+    act:z.act,mtype:z.boss,
+    bx:beach?56*TS+TS/2:32*TS+TS/2,
+    by:beach?31*TS+TS/2:50*TS,
+    path:beach?[[24,31],[34,31],[45,31]]:[[32,18],[32,30],[32,42]],
+  };
+});
+
 function getActiveGates(){
   if(currentZoneId==='town'){
     const gs=TOWN_ACT_GATES.map(g=>({...g,locked:!isActUnlocked(g.actReq)}));
@@ -820,8 +835,8 @@ const ACT_QUESTS=[
    reward:{gold:80,xp:120},        check:()=>zonesVisited.has('ember')},
   {id:'a2q2',act:2,name:'Fire Walk',           desc:'Defeat 10 Fire Imps',
    reward:{gold:120,xp:180,item:'fire_gem'}, check:()=>killCounts[1]>=10},
-  {id:'a2q3',act:2,name:'Deeper Flames',       desc:'Enter the Ember Depths',
-   reward:{gold:100,xp:150},       check:()=>zonesVisited.has('ember_depths')},
+  {id:'a2q3',act:2,name:'Deeper Flames',       desc:'Reach the Lava Channels',
+   reward:{gold:100,xp:150},       check:()=>zonesVisited.has('a2_6')},
   {id:'a2q4',act:2,name:'Quench the Rage',     desc:'Defeat Uncontrolled Fire',
    reward:{gold:400,xp:1000,item:'gem_meteor'}, check:()=>actBossDefeated[1]},
   // ── Act 3: The Iced Automaton ─────────────────────────────────────────
@@ -829,8 +844,8 @@ const ACT_QUESTS=[
    reward:{gold:150,xp:220},       check:()=>zonesVisited.has('tundra')},
   {id:'a3q2',act:3,name:'Golem Slayer',        desc:'Defeat 8 Ice Golems',
    reward:{gold:200,xp:300,item:'ice_gem'}, check:()=>killCounts[2]>=8},
-  {id:'a3q3',act:3,name:'The Glacial Core',    desc:'Enter the Glacial Core',
-   reward:{gold:180,xp:260},       check:()=>zonesVisited.has('glacial_core')},
+  {id:'a3q3',act:3,name:'The Glacial Core',    desc:'Reach the Glacial Core',
+   reward:{gold:180,xp:260},       check:()=>zonesVisited.has('a3_8')},
   {id:'a3q4',act:3,name:'Shatter the Machine', desc:'Defeat The Iced Automaton',
    reward:{gold:700,xp:1800,item:'gem_blizzard'}, check:()=>actBossDefeated[2]},
   // ── Act 4: Thunder Manifestation ──────────────────────────────────────
@@ -838,8 +853,8 @@ const ACT_QUESTS=[
    reward:{gold:250,xp:380},       check:()=>zonesVisited.has('storm')},
   {id:'a4q2',act:4,name:'Eye of the Storm',    desc:'Defeat 15 Thunder Wisps',
    reward:{gold:350,xp:500,item:'elec_gem'}, check:()=>killCounts[3]>=15},
-  {id:'a4q3',act:4,name:'Summit Run',          desc:'Enter the Storm Summit',
-   reward:{gold:300,xp:450},       check:()=>zonesVisited.has('storm_summit')},
+  {id:'a4q3',act:4,name:'Summit Run',          desc:'Reach the Thunder Summit',
+   reward:{gold:300,xp:450},       check:()=>zonesVisited.has('a4_9')},
   {id:'a4q4',act:4,name:'Silence the Thunder', desc:'Defeat The Thunder Manifestation',
    reward:{gold:1200,xp:3000,item:'gem_lightning_storm'}, check:()=>actBossDefeated[3]},
 ];
@@ -938,7 +953,7 @@ function updateCamera(){
 }
 
 // ── Zone system ────────────────────────────────────────────────────────────
-let currentZoneId='beach';
+let currentZoneId='town';
 let enteredFromZone=null;
 let zoneAnnounce={name:'',color:'#fff',timer:0};
 const transition={phase:'none',timer:0,next:''};// phase: none|out|in
@@ -965,6 +980,7 @@ function loadZone(id){
   particles.length=0;
   if(id!=='town'&&id!=='map')zonesVisited.add(id);
   const z=CAMPAIGN_BY_ID[id];
+  if(z)zonesVisited.add(z.biome); // quests check biomes ('beach','forest',...)
   zoneDropTier=z?.dt||1;
   if(id==='town'){
     // Return near the gate for the act we just came from
@@ -994,6 +1010,7 @@ function loadZone(id){
   const actLabel=actNum?` — Act ${actNum}`:'';
   zoneAnnounce={name:cfg.name+actLabel,color:cfg.color,timer:190};
   updateQuests();
+  if(typeof saveGameProgress==='function')saveGameProgress();
 }
 
 function updateTransition(){
@@ -1055,7 +1072,7 @@ window.addEventListener('keydown',e=>{
     }
     if(e.key===' ')e.preventDefault();
   }
-  if(e.key==='e'||e.key==='E'&&currentZoneId==='town'){
+  if((e.key==='e'||e.key==='E')&&currentZoneId==='town'){
     if(!died){
       const nb=NPCS.find(n=>{const dx=n.wx-player.wx,dy=n.wy-player.wy;return dx*dx+dy*dy<48*48;});
       if(nb){
@@ -1735,13 +1752,13 @@ function getGuideWaypoints(){
   // Town: point to the next objective gate (next act's boss zone), else Map Portal
   if(currentZoneId==='town'){
     let targetZone=null;
-    if(!actBossDefeated[0])targetZone='beach';
-    else if(!actBossDefeated[1])targetZone='ember_depths';
-    else if(!actBossDefeated[2])targetZone='glacial_core';
-    else if(!actBossDefeated[3])targetZone='storm_summit';
+    if(!actBossDefeated[0])targetZone='a1_1';
+    else if(!actBossDefeated[1])targetZone='a2_1';
+    else if(!actBossDefeated[2])targetZone='a3_1';
+    else if(!actBossDefeated[3])targetZone='a4_1';
     let tgt,color,label;
     if(targetZone){
-      const g=GATES.find(x=>x.zone===targetZone);if(!g)return null;
+      const g=getActiveGates().find(x=>x.zone===targetZone);if(!g)return null;
       tgt={wx:g.wx,wy:g.wy};color=g.color;label='Next: '+g.label;
     }else{
       tgt={wx:MAPS_PORTAL.wx,wy:MAPS_PORTAL.wy};color=MAPS_PORTAL.color;label='Map Portal';
@@ -2616,12 +2633,13 @@ function renderWake(){
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
-currentZoneId='beach';
-buildZoneMap('beach');
+currentZoneId='town';
+buildZoneMap('town');
 rebuildMinimap();
-spawnZoneMonsters('beach');
-document.body.style.background=ZONE_CFG['beach'].bg;
-player.wx=BEACH_SPAWN.wx;player.wy=BEACH_SPAWN.wy;
+spawnZoneMonsters('town');
+document.body.style.background=ZONE_CFG['town'].bg;
+player.wx=TOWN_SPAWN.wx;player.wy=TOWN_SPAWN.wy;
+zoneAnnounce={name:'Town',color:ZONE_CFG['town'].color,timer:190};
 updateCamera();
 
 // ── Main loop ──────────────────────────────────────────────────────────────
@@ -2660,6 +2678,75 @@ function loop(){
   requestAnimationFrame(loop);
 }
 loop();
+
+// ── Save / load progress (backend) ─────────────────────────────────────────
+// Keyed per user + character so each character keeps its own progress.
+// ('ew_user' is set by the login screen; char comes from the URL or session.)
+const _saveUser=(sessionStorage.getItem('ew_user')||'').toLowerCase();
+const _saveChar=params.get('char')||sessionStorage.getItem('ew_char')||'default';
+const SAVE_ID=_saveUser?`${_saveUser}:game:${_saveChar}`:null;
+let saveReady=false; // don't overwrite the server save before we've loaded it
+
+function buildSave(){
+  return{
+    version:1,element:playerElement,name:playerName,savedAt:Date.now(),
+    player:{
+      hp:player.hp,maxHp:player.maxHp,xp:player.xp,xpToNext:player.xpToNext,
+      level:player.level,skillPoints:player.skillPoints,gold:player.gold,
+      ascended:player.ascended,mapTier:player.mapTier,
+      stats:player.stats,inventory:player.inventory,
+    },
+    killCounts:[...killCounts],
+    actBossDefeated:[...actBossDefeated],
+    zonesVisited:[...zonesVisited],
+    questStatus:Object.fromEntries(questStates.map(q=>[q.id,q.status])),
+    stUnlocked:stNodes.filter(n=>n.unlocked).map(n=>n.id),
+    rngSeq:_rngSeq,
+  };
+}
+
+function applySave(s){
+  if(!s||s.version!==1||!s.player)return;
+  const p=s.player;
+  player.maxHp=p.maxHp??player.maxHp;
+  player.xp=p.xp??0;player.xpToNext=p.xpToNext??100;
+  player.level=p.level??1;player.skillPoints=p.skillPoints??0;
+  player.gold=p.gold??0;player.ascended=!!p.ascended;player.mapTier=p.mapTier||0;
+  if(p.stats)Object.assign(player.stats,p.stats);
+  if(p.inventory){player.inventory=p.inventory;if(!Array.isArray(player.inventory.bag))player.inventory.bag=[];}
+  if(Array.isArray(s.killCounts))s.killCounts.forEach((v,i)=>{if(i<killCounts.length)killCounts[i]=v||0;});
+  if(Array.isArray(s.actBossDefeated))s.actBossDefeated.forEach((v,i)=>{actBossDefeated[i]=!!v;});
+  (s.zonesVisited||[]).forEach(z=>zonesVisited.add(z));
+  if(s.questStatus)questStates.forEach(q=>{if(s.questStatus[q.id])q.status=s.questStatus[q.id];});
+  (s.stUnlocked||[]).forEach(id=>{const n=stNodes.find(x=>x.id===id);if(n)n.unlocked=true;});
+  refreshAvailability();
+  if(typeof s.rngSeq==='number')_rngSeq=Math.max(_rngSeq,s.rngSeq);
+  player.hp=(p.hp>0)?Math.min(p.hp,getMaxHp()):getMaxHp();
+  updateQuests();
+  zoneAnnounce={name:'Progress loaded',color:'#80ff80',timer:150};
+}
+
+async function saveGameProgress(){
+  if(!SAVE_ID||!saveReady||!window.EWProgress)return;
+  try{await EWProgress.saveProgress(SAVE_ID,buildSave());}
+  catch(e){console.warn('save failed',e);}
+}
+
+(async function loadGameProgress(){
+  if(!SAVE_ID||!window.EWProgress){saveReady=!!SAVE_ID;return;}
+  try{applySave(await EWProgress.loadProgress(SAVE_ID));}
+  catch(e){console.warn('load failed',e);}
+  saveReady=true;
+})();
+
+setInterval(saveGameProgress,30000);
+window.addEventListener('beforeunload',()=>{
+  if(!SAVE_ID||!saveReady)return;
+  // sendBeacon survives page close; fetch usually doesn't
+  const body=JSON.stringify({id:SAVE_ID,progress:buildSave()});
+  if(navigator.sendBeacon)navigator.sendBeacon('/api/progress',new Blob([body],{type:'application/json'}));
+  else saveGameProgress();
+});
 </script>
 </body>
 </html>

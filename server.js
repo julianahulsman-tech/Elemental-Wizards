@@ -135,6 +135,12 @@ app.get('/api/friends/:user', (req, res) => {
   return res.json(userFriends);
 });
 
+// A user is "known" to the server once they have any saved data
+function isKnownUser(name){
+  const n = name.toLowerCase();
+  return !!(readDB()[n] || readChars()[n] || readFriends()[n]);
+}
+
 // Send friend request (one user to another)
 app.post('/api/friends/:user/request', (req, res) => {
   const user = req.params.user.toLowerCase();
@@ -142,7 +148,8 @@ app.post('/api/friends/:user/request', (req, res) => {
   if (!target) return res.status(400).json({ error: 'missing target' });
   const targetLower = target.toLowerCase();
   if (user === targetLower) return res.status(400).json({ error: 'cannot friend self' });
-  
+  if (!isKnownUser(targetLower)) return res.status(404).json({ error: 'user not found' });
+
   const friends = readFriends();
   friends[user] = friends[user] || { list: [], pending: [] };
   friends[targetLower] = friends[targetLower] || { list: [], pending: [] };
@@ -165,11 +172,12 @@ app.post('/api/friends/:user/accept', (req, res) => {
   const friends = readFriends();
   friends[user] = friends[user] || { list: [], pending: [] };
   friends[fromLower] = friends[fromLower] || { list: [], pending: [] };
-  
-  // Remove from pending
+
+  // Only accept a request that actually exists
   if (!friends[user].pending) friends[user].pending = [];
+  if (!friends[user].pending.includes(fromLower)) return res.status(404).json({ error: 'no pending request from that user' });
   friends[user].pending = friends[user].pending.filter(f => f !== fromLower);
-  
+
   // Add to both lists
   if (!friends[user].list) friends[user].list = [];
   if (!friends[fromLower].list) friends[fromLower].list = [];

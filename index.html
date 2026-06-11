@@ -612,12 +612,14 @@ function fight(){ if(arenaS1&&arenaS2) window.location.href='arena.html?p1='+are
     }catch(e){ alert('Remove failed'); }
   }
 
-  // F key listener for friends modal
+  // F key listener for friends modal (ignore while typing or logged out)
   document.addEventListener('keydown', (e) => {
-    if(e.key === 'f' || e.key === 'F'){
-      e.preventDefault();
-      openFriendsModal();
-    }
+    if(e.key !== 'f' && e.key !== 'F') return;
+    const t = e.target;
+    if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if(!sessionStorage.getItem('ew_user')) return;
+    e.preventDefault();
+    openFriendsModal();
   });
 </script>
 </body>

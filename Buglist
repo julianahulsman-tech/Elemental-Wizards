@@ -1,3 +1,13 @@
-1: Once logging in you instantly get sent as fire mage with the name "mage" 
-2: once barrels animation is done the mage disappears and you cant do anything.
-3: once you write a wrong password you dont get a message like "wrong password" 
+# Bug List
+1.
+2. [FIXED] Once you write a wrong password you dont get a message like "wrong password" - current code already shows "Wrong password." (index.html submitAuth). If you still see this on the live site it just needs a redeploy.
+3. [FIXED] GAME-BREAKING: world.html crashed on the very first frame - "ACT_BOSS_DATA" and "GATES" were used but never defined, killing the game loop before the player was drawn. ACT_BOSS_DATA is now built from the campaign data (boss guide paths) and the town guide path uses getActiveGates().
+4. [FIXED] Starting zone was the old "beach" zone (no gates, no monsters, no way out). The game now starts in Town at the plaza, with the guide path pointing to the Act I gate.
+5. [FIXED] 8 of the 16 quests could never be completed. Entering a zone now also records its biome ("beach", "forest", "ember", "tundra", "storm"), and the three quests that pointed at nonexistent zones now target real ones (Lava Channels a2_6, Glacial Core a3_8, Thunder Summit a4_9).
+6. [FIXED] You couldn't type the letter F in the login/name inputs - the friends-modal hotkey now ignores keystrokes while typing in a field and only works when logged in.
+7. [FIXED] Game progress was never saved. world.html now loads save-progress.js and saves level, XP, gold, stats, inventory, skill tree, quests, kills, bosses and visited zones - every 30s, on zone change, and on page close (sendBeacon). Saves are per user AND per character (user:game:charId), so the character picked on the login screen now matters.
+8. [FIXED] Friends API: accepting a request that was never sent now returns 404 "no pending request from that user", and friend requests to users the server has never seen return 404 "user not found".
+9. [FIXED] Pressing E triggered shop/quest NPCs in any zone - operator precedence fixed so the town check applies to both e and E.
+10. [FIXED] Opening /world without URL parameters gave a fire mage named "Mage" - it now redirects to the login screen unless both element and name are present and valid.
+
+# Feature List
