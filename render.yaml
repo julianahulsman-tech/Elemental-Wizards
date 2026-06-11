@@ -4,3 +4,6 @@ services:
     env: docker
     dockerfilePath: Dockerfile
     buildCommand: ""
+    envVars:
+      - key: PORT
+        value: 3000

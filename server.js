@@ -46,7 +46,7 @@ function writeFriends(obj){
 }
 
 // Serve the existing static site so client can call relative paths
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), { extensions: ['html'] }));
 
 // API: save progress
 app.post('/api/progress', (req, res) => {
